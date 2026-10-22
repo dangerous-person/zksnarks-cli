@@ -1,0 +1,6 @@
+/zksnarks
+/bake
+/dist/
+*.test
+*.out
+.DS_Store
