@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
@@ -11,10 +9,12 @@ import (
 
 // The network page: its line and heading like the luminaries', then every spotlighted
 // collector under each other, the zkSNARK they hold on the left and their words on the
-// right. The arrows pick one.
+// right. The arrows pick one, and its interview plays in a window over the page.
 const (
 	networkIntro = "The collectors holding zkSNARKs, spotlighted one at a time."
 	networkTextW = 64 // the widest the words run, so their lines read well
+	// networkURL is the site's network page, where its button applies for a spotlight
+	networkURL = "https://zksnarks.net/network"
 )
 
 // networkHeading is the page's title; a window too narrow for it gets plain "THE NETWORK_".
@@ -41,8 +41,8 @@ var networkHeading = blockFont{
 	},
 }
 
-// netTarget is a place on the network page a click acts on: spotlight spot's key ("o") or
-// the rest of it ("").
+// netTarget is a place on the network page a click acts on: spotlight spot's watch key
+// ("w") or the rest of it, portrait and words ("").
 type netTarget struct {
 	rect
 	spot int
@@ -53,6 +53,9 @@ func (m *Model) networkKey(k string) tea.Cmd {
 	spots := m.opts.Site.Spotlights
 	if len(spots) == 0 {
 		return nil
+	}
+	if m.watchOpen {
+		return m.playerKey(k)
 	}
 	page := max(1, m.bodyH()-2)
 	switch k {
@@ -68,8 +71,12 @@ func (m *Model) networkKey(k string) tea.Cmd {
 		m.netTop -= page
 	case "pgdown", "ctrl+f", "ctrl+d", "space":
 		m.netTop += page
-	case "o", "enter":
+	case "w", "enter":
+		return m.openPlayer()
+	case "o":
 		return m.jump(spots[m.spot].Snark)
+	case "a":
+		return openURL(networkURL)
 	}
 	return nil
 }
@@ -80,17 +87,60 @@ func (m *Model) selectSpot(i int) {
 	m.netFollow = true
 }
 
-// networkClick presses a spotlight's key or picks it.
+// openPlayer plays the picked spotlight's interview in its window.
+func (m *Model) openPlayer() tea.Cmd {
+	if m.interviewOf(m.spot) == nil {
+		return nil
+	}
+	m.watchOpen = true
+	cmd, _ := m.watchKey("w")
+	return cmd
+}
+
+// closePlayer stops the interview and closes its window.
+func (m *Model) closePlayer() {
+	m.stopWatch()
+	m.watchOpen = false
+}
+
+// playerKey handles the keys of the interview's window: p and space pause, resume or play
+// again, s stops, w plays and esc closes.
+func (m *Model) playerKey(k string) tea.Cmd {
+	switch k {
+	case "esc", "backspace":
+		m.closePlayer()
+		return nil
+	case "space":
+		k = "p"
+	}
+	if state, _ := m.watching(m.spot); k == "p" && state == watchStopped {
+		k = "w"
+	}
+	cmd, _ := m.watchKey(k)
+	return cmd
+}
+
+// playerOpen reports whether the interview's window is over the network page.
+func (m *Model) playerOpen() bool { return m.section == secNetwork && m.watchOpen && !m.help }
+
+// networkClick picks the spotlight clicked and plays its interview when it has one; with the
+// window open, a click on the video pauses or resumes it and one outside closes the window.
 func (m *Model) networkClick(ms tea.Mouse) tea.Cmd {
+	if m.watchOpen {
+		switch {
+		case !m.box.contains(ms.X, ms.Y):
+			m.closePlayer()
+		case m.screen.contains(ms.X, ms.Y):
+			return m.playerKey("p")
+		}
+		return nil
+	}
 	for _, t := range m.netTargets {
 		if !t.contains(ms.X, ms.Y) {
 			continue
 		}
 		m.spot = t.spot
-		if t.key == "o" {
-			return m.jump(m.opts.Site.Spotlights[t.spot].Snark)
-		}
-		return nil
+		return m.openPlayer()
 	}
 	return nil
 }
@@ -98,7 +148,7 @@ func (m *Model) networkClick(ms tea.Mouse) tea.Cmd {
 // networkLines draws the page from line netTop and records what clicks on it act on, with a
 // scrollbar test when it does not fit.
 func (m *Model) networkLines(w, h int) ([]line, func(int) bool) {
-	doc := m.pageHead(networkIntro, networkHeading, "THE NETWORK_", w)
+	doc, head := m.pageHead(networkIntro, networkHeading, "THE NETWORK_", w)
 	spots := m.opts.Site.Spotlights
 	tx := art.ThumbW + luminaryGap // the words' column
 	tw := max(1, min(networkTextW, w-tx))
@@ -140,9 +190,8 @@ func (m *Model) networkLines(w, h int) ([]line, func(int) bool) {
 		spans = append(spans, [2]int{y0, y0 + n})
 		doc = append(doc, line{}, line{})
 	}
-	if n := m.opts.Site.Slots - len(spots); n > 0 {
-		doc = append(doc, text(fg(m.theme.Dim), clip(itoa(n)+" more spotlight slots to come", w)))
-	}
+	doc = m.drips(&m.netDrips, networkHeading, 12).draw(doc, head, &m.theme)
+	doc = append(doc, line{}) // room under the last one
 	if m.netFollow && m.spot < len(spans) {
 		if sp := spans[m.spot]; sp[0] < m.netTop {
 			m.netTop = sp[0]
@@ -169,12 +218,13 @@ func (m *Model) networkLines(w, h int) ([]line, func(int) bool) {
 }
 
 // spotWords is spotlight i's words in tw cells: name and handle as on the luminaries page,
-// the token and the interview's length, the quote, the bio and the key, with where it is for
-// a click.
+// the token and the interview's length, the quote, the bio and, for the picked one with an
+// interview, its watch key, with where that is for a click. The key's line is kept for all,
+// so picking another does not move the page.
 func (m *Model) spotWords(i int, s site.Spotlight, tw int) ([]line, []keyRect) {
 	dim := fg(m.theme.Dim)
 	out := []line{text(fg(m.theme.Text), clip(s.Name, tw)), text(dim, clip("@"+s.Handle, tw))}
-	meta := "holds #" + itoa(s.Snark)
+	meta := "zkSNARK #" + itoa(s.Snark)
 	if s.Runtime != "" {
 		meta += " · interview " + s.Runtime
 	}
@@ -191,26 +241,11 @@ func (m *Model) spotWords(i int, s site.Spotlight, tw int) ([]line, []keyRect) {
 		out = append(out, r.line())
 	}
 	out = append(out, line{})
-	pairs := [][3]string{{"o", "open #" + itoa(s.Snark) + " in zilkroad", "open #" + itoa(s.Snark)}}
-	y := len(out)
-	draw := func(label int) (line, []keyRect) { // the long labels, or the short ones
-		var r row
-		var keys []keyRect
-		for _, p := range pairs {
-			if r.w > 0 {
-				r.space(2)
-			}
-			x0 := r.w
-			m.pageKey(&r, p[0], p[label])
-			keys = append(keys, keyRect{rect{x0, y, r.w, y + 1}, p[0]})
-		}
-		return r.line(), keys
+	if i != m.spot || m.interviewOf(i) == nil {
+		return append(out, line{}), nil
 	}
-	l, keys := draw(1)
-	if l.w > tw {
-		l, keys = draw(2)
-	}
-	return append(out, l), keys
+	l := m.hints("enter", "watch")
+	return append(out, l), []keyRect{{rect{0, len(out), l.w, len(out) + 1}, "w"}}
 }
 
 // figureTop is the first cell row with some of the figure in it, half-blocks being two
@@ -224,8 +259,57 @@ func figureTop(back []bool) int {
 	return 0
 }
 
-// pageKey draws "[K] label" the way the network page shows its keys.
-func (m *Model) pageKey(r *row, key, label string) {
-	r.put(fg(m.theme.Accent), "["+strings.ToUpper(key)+"]")
-	r.put(fg(m.theme.Dim), " "+label)
+// drawPlayer layers the interview's window over the dimmed page like the card's: the
+// collector's name on the top of its frame, the video on black with its progress under it,
+// and on the bottom of the frame the keys on the left and the time on the right. A window
+// too small for the video gets a note how big it must be.
+func (m *Model) drawPlayer(cv *canvas) {
+	c := m.interviewOf(m.spot)
+	if c == nil {
+		return
+	}
+	s := m.opts.Site.Spotlights[m.spot]
+	top, bottom := m.headRows(), m.h-m.footRows()
+	areaW, areaH := m.w-4, bottom-top
+	cv.shade(0, top, m.w, bottom, 1-m.theme.Backdrop, art.RGB{})
+	cols, rows := c.video.Size()
+	content := m.player(m.spot, c)
+	cw := cols
+	small := modalChromeW+cols > areaW || modalChromeH+len(content) > areaH
+	if small {
+		needW := modalChromeW + cols + 4 // and the page's border and padding
+		needH := modalChromeH + len(content) + m.headRows() + 2
+		if needH >= marketMinH { // the market strip shows from there
+			needH += 2
+		}
+		cw = max(1, min(48, areaW-modalChromeW))
+		content = []line{text(bold(m.theme.Text), "MAKE THE WINDOW BIGGER_"), {}}
+		for _, ln := range wrap(plain("the interview needs "+itoa(needW)+" x "+itoa(needH)+", the window is "+itoa(m.w)+" x "+itoa(m.h)), cw) {
+			var r row
+			spanLine(&r, ln, fg(m.theme.Dim), "", 1<<30)
+			content = append(content, r.line())
+		}
+	}
+	boxW, boxH := modalChromeW+cw, modalChromeH+len(content)
+	x0, y0 := 2+(areaW-boxW)/2, top+max(0, (areaH-boxH)/2)
+	t := m.playerTime(m.spot, c)
+	keys := m.playerKeys(m.spot)
+	ax, ay := m.modalBox(cv, rect{x0, y0, x0 + boxW, y0 + boxH}, s.Name, func(w int) line {
+		if keys.w+3+width(t) > w { // a dash and a space each between the keys and the time
+			keys = m.hints("esc", "close")
+		}
+		return keys
+	})
+	// the time sits as far from the right corner as the keys from the left one
+	if fx1 := x0 + boxW - modalMargin; keys.w+3+width(t) <= fx1-1-ax-2 {
+		cv.draw(fx1-modalPadX-width(t)-2, y0+boxH-1, fg(m.theme.Dim)+" "+t+" "+reset)
+	}
+	m.screen = rect{}
+	if !small {
+		cv.fill(ax, ay, ax+cols, ay+rows, m.theme.BodyBg) // the video sits on black, like the page
+		m.screen = rect{ax, ay, ax + cols, ay + rows}
+	}
+	for k, l := range content {
+		cv.draw(ax, ay+k, l.s)
+	}
 }

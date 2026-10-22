@@ -53,6 +53,7 @@ type Options struct {
 	Glyph  art.Glyph
 	Client *market.Client
 	State  State
+	Media  string // the folder with the spotlight interviews; "" for none
 }
 
 type history struct {
@@ -82,11 +83,14 @@ type Model struct {
 	netTop     int         // the network page's first visible line
 	netFollow  bool        // scroll the page to the picked spotlight
 	netTargets []netTarget // what clicks on the page act on, as last drawn
+	watchOpen  bool        // the interview's window is open
+	screen     rect        // where its video is, as last drawn
 
-	lumTop   int       // luminaries: first visible line
-	lumTicks int       // steps of the empty slot's animation, which also blink its cursor
-	ticking  bool      // they are running
-	shed     *shedding // the empty slot's figure
+	lumTop             int       // luminaries: first visible line
+	lumTicks           int       // steps of the empty slot's animation, which also blink its cursor
+	ticking            bool      // the luminaries' and network's animations are running
+	lumDrips, netDrips *dripping // the headings' drops
+	shed               *shedding // the empty slot's figure
 
 	input     input
 	inputWas  string // query text when the search box got focus, for esc
@@ -114,6 +118,9 @@ type Model struct {
 	histFor    int // the token whose full history the card shows instead of its details
 	histTop    int // first visible line of that history
 	artChanged map[int]bool
+
+	interviews map[int]*interview // by spotlight; nil when there is none
+	watch      watch
 }
 
 // New builds the model. Tokens are copied so live market data can be applied in place.
@@ -126,6 +133,7 @@ func New(o Options) *Model {
 		cards:      map[int][]string{},
 		histories:  map[int]*history{},
 		artChanged: map[int]bool{},
+		interviews: map[int]*interview{},
 		theme:      themes[0],
 		suggSel:    -1,
 		lastEvent:  o.Atlas.Meta.SnapshotAt,
@@ -158,11 +166,12 @@ func (m *Model) SavedState() State {
 	return State{Query: m.input.text, Grid: m.mode == modeGallery, Theme: m.theme.Name, Section: sectionNames[m.section]}
 }
 
-// Init starts the market feed, and the luminaries' animation when the app opens on them.
+// Init starts the market feed, and the page's animation when the app opens on the
+// luminaries or the network.
 func (m *Model) Init() tea.Cmd {
 	var cmds []tea.Cmd
-	if m.section == secLuminaries {
-		cmds = append(cmds, m.startLuminaryTick())
+	if m.section == secLuminaries || m.section == secNetwork {
+		cmds = append(cmds, m.startPageTick())
 	}
 	if m.online() {
 		cmds = append(cmds, m.fetchSnapshot(), m.fetchStats(), m.fetchRate(), tickEvents(), tickSnapshot(), tickRate())
@@ -253,8 +262,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseClickMsg:
 		return m, m.click(msg.Mouse())
-	case luminaryTickMsg:
-		return m, m.onLuminaryTick()
+	case pageTickMsg:
+		return m, m.onPageTick()
+	case watchTickMsg:
+		return m, m.onWatchTick(msg)
+	case soundMsg:
+		m.onSound(msg)
+		return m, nil
 	}
 	return m, m.marketMsg(msg)
 }
@@ -360,19 +374,20 @@ func (m *Model) tokenKey(k string) tea.Cmd {
 	return m.toggleHistory()
 }
 
-// setSection switches sections; the luminaries page starts its animation.
+// setSection switches sections; the luminaries and network pages start their animation.
 func (m *Model) setSection(s int) tea.Cmd {
 	if s < 0 || s >= len(sectionNames) || s == m.section {
 		return nil
 	}
 	m.section = s
 	m.help = false
+	m.closePlayer() // the network page is the only one that plays
 	if s == secZilkroad {
 		m.ensureVisible()
 		return nil
 	}
-	if s == secLuminaries {
-		return m.startLuminaryTick()
+	if s == secLuminaries || s == secNetwork {
+		return m.startPageTick()
 	}
 	return nil
 }
@@ -585,11 +600,13 @@ func (m *Model) wheel(ms tea.Mouse) {
 		}
 		return
 	case secNetwork:
-		switch ms.Button {
-		case tea.MouseWheelUp:
-			m.netTop -= wheelLines
-		case tea.MouseWheelDown:
-			m.netTop += wheelLines
+		if !m.watchOpen {
+			switch ms.Button {
+			case tea.MouseWheelUp:
+				m.netTop -= wheelLines
+			case tea.MouseWheelDown:
+				m.netTop += wheelLines
+			}
 		}
 		return
 	}

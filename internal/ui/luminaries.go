@@ -186,8 +186,9 @@ func (f blockFont) lines(th *Theme) []line {
 }
 
 // pageHead is the top of the luminaries and network pages: their line about themselves, the
-// heading in block letters (or plain text where it does not fit) and a blank line.
-func (m *Model) pageHead(intro string, f blockFont, plainHead string, w int) []line {
+// heading in block letters (or plain text where it does not fit) and a blank line. top is
+// the line the block letters start on, -1 for plain text.
+func (m *Model) pageHead(intro string, f blockFont, plainHead string, w int) (lines []line, top int) {
 	out := []line{{}}
 	for _, ln := range wrap(plain(intro), w) {
 		var r row
@@ -195,12 +196,128 @@ func (m *Model) pageHead(intro string, f blockFont, plainHead string, w int) []l
 		out = append(out, r.line())
 	}
 	out = append(out, line{})
+	top = -1
 	if f.width() <= w {
+		top = len(out)
 		out = append(out, f.lines(&m.theme)...)
 	} else {
 		out = append(out, text(bold(m.theme.Text), plainHead))
 	}
-	return append(out, line{})
+	return append(out, line{}), top
+}
+
+// The headings drip: a drop leaves one of the colons at the bottom of the letters, now and
+// then as two dots that run on as one, and runs down the same column a row at a time,
+// greying out until it is gone; half a second to a second later the next one leaves another
+// colon.
+const (
+	dripDepth = 3 // rows a drop runs below its colon
+	dripEvery = 4 // ticks a drop takes for a row
+	dripMax   = 2 // drops at once, should one outlast the wait for the next
+)
+
+type dripping struct {
+	from  [][3]int // the colons drops leave: column, row and tone
+	drops []drip
+	rng   *rand.Rand
+	tick  int
+	next  int // the tick the next drop leaves at
+	last  int // the colon the last one left
+}
+
+// drip is a drop dy rows under colon from, age ticks old. A double one leaves as a colon;
+// light is how bright it starts: 0 the colon's own tone, 1 light grey, 2 white.
+type drip struct {
+	from, dy, age int
+	double        bool
+	light         int
+}
+
+// newDripping finds the colons at the bottom of a heading's columns.
+func newDripping(f blockFont, seed uint64) *dripping {
+	d := &dripping{rng: rand.New(rand.NewPCG(seed, 5)), last: -1}
+	rows := make([][]rune, len(f.glyphs))
+	for y, g := range f.glyphs {
+		rows[y] = []rune(g)
+	}
+	for x := range rows[0] {
+		for y := len(rows) - 1; y >= 0; y-- {
+			if c := rows[y][x]; c != ' ' {
+				if c == ':' {
+					d.from = append(d.from, [3]int{x, y, int(f.tones[y][x])})
+				}
+				break
+			}
+		}
+	}
+	d.next = 4 + d.rng.IntN(8) // the first soon after the page opens
+	return d
+}
+
+func (d *dripping) step() {
+	d.tick++
+	keep := d.drops[:0]
+	for _, p := range d.drops {
+		if p.age++; p.age%dripEvery == 0 {
+			p.dy++
+		}
+		if p.dy <= dripDepth {
+			keep = append(keep, p)
+		}
+	}
+	d.drops = keep
+	if len(d.from) == 0 || d.tick < d.next || len(d.drops) >= dripMax {
+		return
+	}
+	from := d.rng.IntN(len(d.from))
+	if len(d.from) > 1 && from == d.last { // another colon than the last
+		from = (from + 1 + d.rng.IntN(len(d.from)-1)) % len(d.from)
+	}
+	light := []int{0, 0, 1, 1, 2}[d.rng.IntN(5)]
+	d.drops = append(d.drops, drip{from: from, dy: 1, double: d.rng.IntN(3) == 0, light: light})
+	d.last = from
+	d.next = d.tick + dripDepth*dripEvery + 3 + d.rng.IntN(5) // once it has run, a moment later
+}
+
+// draw puts the drops on the page's lines, the heading starting on line top; a drop shows
+// only on a cell with nothing in it.
+func (d *dripping) draw(doc []line, top int, th *Theme) []line {
+	if top < 0 {
+		return doc
+	}
+	tone := map[int]art.RGB{'1': mix(th.Text, th.BodyBg, 0.55), '2': mix(th.Text, th.BodyBg, 0.17), '3': th.Text, '4': th.Text}
+	for _, p := range d.drops {
+		c := d.from[p.from]
+		start := []art.RGB{tone[c[2]], mix(th.Text, th.BodyBg, 0.17), th.Text}[p.light]
+		ch := "."
+		if p.double && p.dy == 1 {
+			ch = ":"
+		}
+		if y := top + c[1] + p.dy; y < len(doc) {
+			doc[y] = putCell(doc[y], c[0], fg(mix(start, th.BodyBg, 0.22*float64(p.dy)))+ch+reset)
+		}
+	}
+	return doc
+}
+
+// putCell writes s, one styled character, over line l at column x when the cell there shows
+// nothing, padding the line to reach it.
+func putCell(l line, x int, s string) line {
+	cv := newCanvas(max(l.w, x+1), 1)
+	cv.draw(0, 0, l.s)
+	if c := cv.at(x, 0); c.r != ' ' || c.hasBg && c.bg != (art.RGB{}) {
+		return l
+	}
+	cv.draw(x, 0, s)
+	return line{cv.String(), cv.w}
+}
+
+// drips is a page's dripping, made the first time it shows.
+func (m *Model) drips(d **dripping, f blockFont, seed uint64) *dripping {
+	if *d == nil {
+		*d = newDripping(f, seed)
+	}
+	return *d
 }
 
 // luminaryHeading is the page's title; a window too narrow for it gets plain "LUMINARIES_".
@@ -363,30 +480,36 @@ func lighterBody(a art.Art, back []bool) art.Art {
 	return out
 }
 
-type luminaryTickMsg struct{}
+type pageTickMsg struct{}
 
-// startLuminaryTick runs the empty slot's animation and cursor while the page is open; they
-// stop on the next tick after it closes.
-func (m *Model) startLuminaryTick() tea.Cmd {
+// startPageTick runs the animations of the luminaries and network pages while one of them
+// is open: the headings' drops, and the luminaries' empty slot and its cursor. They stop on
+// the next tick after the page closes.
+func (m *Model) startPageTick() tea.Cmd {
 	if m.ticking {
 		return nil
 	}
 	m.ticking, m.lumTicks = true, 0
-	return luminaryTick()
+	return pageTick()
 }
 
-func luminaryTick() tea.Cmd {
-	return tea.Tick(luminaryEvery, func(time.Time) tea.Msg { return luminaryTickMsg{} })
+func pageTick() tea.Cmd {
+	return tea.Tick(luminaryEvery, func(time.Time) tea.Msg { return pageTickMsg{} })
 }
 
-func (m *Model) onLuminaryTick() tea.Cmd {
-	if m.section != secLuminaries {
+func (m *Model) onPageTick() tea.Cmd {
+	switch m.section {
+	case secLuminaries:
+		m.lumTicks++
+		m.shedding().step()
+		m.drips(&m.lumDrips, luminaryHeading, 11).step()
+	case secNetwork:
+		m.drips(&m.netDrips, networkHeading, 12).step()
+	default:
 		m.ticking = false
 		return nil
 	}
-	m.lumTicks++
-	m.shedding().step()
-	return luminaryTick()
+	return pageTick()
 }
 
 func (m *Model) shedding() *shedding {
@@ -416,7 +539,7 @@ func (m *Model) luminaryKey(k string) {
 
 // luminaryLines draws the page from line lumTop, with a scrollbar test when it does not fit.
 func (m *Model) luminaryLines(w, h int) ([]line, func(int) bool) {
-	doc := m.pageHead(luminaryIntro, luminaryHeading, "LUMINARIES_", w)
+	doc, head := m.pageHead(luminaryIntro, luminaryHeading, "LUMINARIES_", w)
 	// every luminary, then the empty slot
 	type slot struct {
 		art   art.Art
@@ -502,6 +625,7 @@ func (m *Model) luminaryLines(w, h int) ([]line, func(int) bool) {
 		}
 		doc = append(doc, line{}, line{})
 	}
+	doc = m.drips(&m.lumDrips, luminaryHeading, 11).draw(doc, head, &m.theme)
 	m.lumTop = max(0, min(m.lumTop, len(doc)-h))
 	out := make([]line, h)
 	copy(out, doc[m.lumTop:])

@@ -232,6 +232,8 @@ func (m *Model) helpLines(w, h int) []line {
 		{"FIND", "/ search · tab completes · f filters panel"},
 		{"VIEW", "v grid or list · t theme"},
 		{"DATA", "r refresh prices · H history (1 request) · z open on zilkroad"},
+		{"WATCH", "enter watch a spotlight interview · p pause · s stop · esc close"},
+		{"APPLY", "a apply for a spotlight on zksnarks.net"},
 		{"QUIT", "q · ctrl+c"},
 		{"", ""},
 		{"QUERY", "skele rim · eyes:\"rim cobalt\" · lineage:noise,dune"},

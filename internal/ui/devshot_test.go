@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -90,10 +91,16 @@ func TestShots(t *testing.T) {
 		}},
 		{"bid", 160, 48, "", []step{{"sel:69 enter fakebid", "bid69"}, {"esc sel:9701 enter fakebid", "bid-apparition"}}},
 		{"provenance-small", 80, 24, "", []step{{"sel:161 enter fakehist", "prov-80x24"}, {"H", "prov-full-80x24"}}},
-		{"network-wide", 250, 64, "", []step{{"3", "network"}, {"down", "network-josh"}}},
+		{"interview", 160, 48, "", []step{{"3 down", "josh"}, {"w seek:30", "josh-playing"}, {"p", "josh-paused"}, {"s", "josh-stopped"}, {"esc", "josh-closed"}}},
+		{"interview-wide", 180, 50, "", []step{{"3 down", "josh"}, {"w seek:12", "josh-playing"}}},
+		{"interview-tall", 160, 60, "", []step{{"3 down", "josh"}, {"down", "josh-last"}}},
+		{"interview-edge", 140, 47, "", []step{{"3 down", "josh"}, {"w seek:12", "josh-playing"}}},
+		{"interview-small", 120, 40, "", []step{{"3 down", "josh"}, {"w seek:20", "josh-modal"}, {"p", "josh-modal-paused"}}},
+		{"interview-tiny", 80, 24, "", []step{{"3 down", "josh"}, {"w", "josh-too-small"}}},
+		{"network-wide", 250, 64, "", []step{{"3", "network"}, {"down", "network-josh"}, {"w seek:25", "network-playing"}}},
 	}
 	for _, sc := range scenarios {
-		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad", Grid: !strings.HasPrefix(sc.name, "default")}})
+		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad", Grid: !strings.HasPrefix(sc.name, "default")}, Media: "../../media"})
 		m.Update(tea.WindowSizeMsg{Width: sc.w, Height: sc.h})
 		for _, st := range sc.steps {
 			for _, k := range strings.Fields(st.keys) {
@@ -107,6 +114,11 @@ func TestShots(t *testing.T) {
 					if tk, ok := m.selected(); ok {
 						m.histories[tk.ID] = &history{entries: fakeHistory(time.Now())}
 					}
+					continue
+				}
+				if sec, ok := strings.CutPrefix(k, "seek:"); ok { // move the interview to a second
+					n, _ := strconv.Atoi(sec)
+					m.watch.at, m.watch.base = time.Duration(n)*time.Second, time.Duration(n)*time.Second
 					continue
 				}
 				if id, ok := strings.CutPrefix(k, "sel:"); ok { // select a token by number

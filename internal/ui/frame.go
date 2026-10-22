@@ -8,8 +8,8 @@ import (
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 )
 
-// The front page comes first, then the Zilk Road market and the sections mirroring
-// zksnarks.net; each section's key is its number.
+// The Zilk Road market comes first, then the sections mirroring zksnarks.net; the keys 1
+// to 3 switch between them.
 const (
 	secZilkroad = iota
 	secLuminaries
@@ -25,7 +25,7 @@ const marketMinH = 30
 // the market strip at the bottom, and the key hints under the box.
 //
 //	╭──────────────────────────────╮
-//	│ zkSNARKs        1 zilkroad … │  nav
+//	│ zkSNARKs_       1 zilkroad … │  nav
 //	├──────────────────────────────┤
 //	│ / search                     │  zilkroad only
 //	├──────────────────────────────┤  zilkroad only
@@ -66,12 +66,16 @@ func (m *Model) View() tea.View {
 		return v
 	}
 	out, cursorX := m.frameLines()
-	if m.overlay() {
+	if m.overlay() || m.playerOpen() {
 		cv := newCanvas(m.w, m.h)
 		for y, l := range out {
 			cv.draw(0, y, l)
 		}
-		m.drawCard(cv)
+		if m.overlay() {
+			m.drawCard(cv)
+		} else {
+			m.drawPlayer(cv)
+		}
 		v.Content = cv.String()
 	} else {
 		v.Content = strings.Join(out, "\n")
@@ -185,7 +189,7 @@ func (m *Model) navLayout() []navItem {
 	return nil
 }
 
-const brand = "zkSNARKs"
+const brand = "zkSNARKs_"
 
 func (m *Model) navLine() line {
 	items := m.navLayout()
@@ -294,23 +298,28 @@ func (m *Model) footerHints() []line {
 	case m.focus == focusFilters:
 		return []line{m.hints("space", "toggle", "type", "find a value", "esc", "close"), m.hints("space", "toggle", "esc", "close")}
 	case m.section == secLuminaries:
-		return []line{m.hints("↑↓", "scroll", "1-3", "section", "?", "help"), m.hints("↑↓", "scroll", "?", "help")}
+		return []line{m.hints("↑↓", "scroll", "?", "help")}
+	case m.section == secNetwork && m.watchOpen:
+		return []line{m.playerKeys(m.spot)}
 	case m.section == secNetwork:
 		if s, ok := m.spotlight(); ok {
+			var watch []string
+			if m.interviewOf(m.spot) != nil {
+				watch = []string{"enter", "watch"}
+			}
 			return []line{
-				m.hints("↑↓", "pick", "o", "open #"+itoa(s.Snark), "1-3", "section", "?", "help"),
-				m.hints("↑↓", "pick", "o", "open", "?", "help"),
-				m.hints("o", "open"),
+				m.hints(append(watch, "↑↓", "pick", "o", "open #"+itoa(s.Snark), "a", "apply", "?", "help")...),
+				m.hints(append(watch, "↑↓", "pick", "o", "open", "a", "apply", "?", "help")...),
+				m.hints(append(watch, "o", "open", "a", "apply")...),
 			}
 		}
-		return []line{m.hints("1-3", "section", "?", "help")}
+		return []line{m.hints("a", "apply", "?", "help")}
 	}
 	other := "list"
 	if m.mode == modeList {
 		other = "grid"
 	}
 	return []line{
-		m.hints("enter", "open", "f", "filters", "v", other, "1-3", "section", "?", "help"),
 		m.hints("enter", "open", "f", "filters", "v", other, "?", "help"),
 		m.hints("f", "filters", "?", "help"),
 	}

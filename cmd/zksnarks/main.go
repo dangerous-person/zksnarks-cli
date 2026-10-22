@@ -33,6 +33,7 @@ func main() {
 	colorFlag := fs.String("color", "auto", "colour profile: auto, truecolor or 256")
 	glyphFlag := fs.String("glyph", "auto", "cell split glyph: auto, half (▀) or five-eighths (▅, for Terminal.app)")
 	query := fs.String("q", "", "start with this search query")
+	media := fs.String("media", "", "folder with the spotlight interviews, NAME.zkv and NAME.mp3 (default: media next to the program or in the current folder)")
 	showVersion := fs.Bool("version", false, "print the version")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: zksnarks [flags]\n       zksnarks [flags] print [-card] N...\n\n")
@@ -66,7 +67,7 @@ func main() {
 	if *query != "" {
 		st.Query = *query
 	}
-	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Client: market.New(*offline), State: st})
+	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Client: market.New(*offline), State: st, Media: mediaDir(*media)})
 	final, err := tea.NewProgram(m, tea.WithColorProfile(profile)).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
@@ -110,6 +111,26 @@ func printTokens(args []string, profile colorprofile.Profile, glyph art.Glyph) e
 		fmt.Fprintln(w)
 	}
 	return nil
+}
+
+// mediaDir is the folder with the spotlight interviews: the flag's, or the first media
+// folder next to the program or in the current folder.
+func mediaDir(flagged string) string {
+	if flagged != "" {
+		return flagged
+	}
+	var dirs []string
+	if exe, err := os.Executable(); err == nil {
+		if exe, err = filepath.EvalSymlinks(exe); err == nil {
+			dirs = append(dirs, filepath.Join(filepath.Dir(exe), "media"))
+		}
+	}
+	for _, d := range append(dirs, "media") {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			return d
+		}
+	}
+	return ""
 }
 
 // stateFile is the remembered query, view and theme, in the XDG config directory.
