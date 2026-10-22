@@ -1,5 +1,5 @@
-// Package ui is the Bubble Tea front end: the Zilk Road explorer (gallery, card, search,
-// filters) and the zksnarks.net sections (luminaries, network).
+// Package ui is the Bubble Tea front end: the Zilk Road explorer (gallery, list, card,
+// search, filters) and the zksnarks.net sections (luminaries, network).
 package ui
 
 import (
@@ -23,6 +23,13 @@ const (
 	wheelLines = 2
 )
 
+type mode int
+
+const (
+	modeGallery mode = iota
+	modeList
+)
+
 type focus int
 
 const (
@@ -34,6 +41,7 @@ const (
 // State is what the app remembers between runs.
 type State struct {
 	Query   string `json:"query"`
+	Grid    bool   `json:"grid"` // the gallery instead of the list, which zilkroad opens with
 	Theme   string `json:"theme"`
 	Section string `json:"section"`
 }
@@ -63,6 +71,7 @@ type Model struct {
 
 	w, h    int
 	section int
+	mode    mode
 	card    bool      // the card of the selected token is open
 	box     rect      // where the overlaid card was last drawn, for clicks outside it
 	keys    []keyRect // the card's clickable key hints
@@ -84,7 +93,7 @@ type Model struct {
 	q         search.Query
 	results   []int // token indices
 	sel       int   // index into results
-	scroll    int   // first visible line of the gallery
+	scroll    int   // gallery: first visible line; list: first visible row
 	sugg      []search.Suggestion
 	suggSel   int // -1: none highlighted
 	facets    *[6]map[string]int
@@ -134,6 +143,9 @@ func New(o Options) *Model {
 			m.section = i
 		}
 	}
+	if !o.State.Grid {
+		m.mode = modeList
+	}
 	m.ix = search.NewIndex(m.tokens)
 	m.input.set(o.State.Query)
 	m.refresh(false)
@@ -143,7 +155,7 @@ func New(o Options) *Model {
 
 // SavedState returns what to remember for the next run.
 func (m *Model) SavedState() State {
-	return State{Query: m.input.text, Theme: m.theme.Name, Section: sectionNames[m.section]}
+	return State{Query: m.input.text, Grid: m.mode == modeGallery, Theme: m.theme.Name, Section: sectionNames[m.section]}
 }
 
 // Init starts the market feed, and the luminaries' animation when the app opens on them.
@@ -311,6 +323,14 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		m.openPanel()
 	case "z", "H", "shift+h":
 		return m.tokenKey(k)
+	case "v":
+		if m.mode == modeGallery {
+			m.mode = modeList
+		} else {
+			m.mode = modeGallery
+		}
+		m.scroll = 0
+		m.ensureVisible()
 	case "enter":
 		if len(m.results) > 0 {
 			m.card, m.histFor = true, 0
@@ -327,7 +347,7 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 // tokenKey opens the selected token on zilkroad (z) or its history on the card (H), from
-// the results.
+// the results; the list's preview shows both keys.
 func (m *Model) tokenKey(k string) tea.Cmd {
 	t, ok := m.selected()
 	if !ok {
@@ -429,19 +449,26 @@ func (m *Model) jump(id int) tea.Cmd {
 	return nil
 }
 
-// move handles navigation keys in the gallery.
+// move handles navigation keys in the gallery and the list.
 func (m *Model) move(k string) {
 	n := len(m.results)
 	if n == 0 {
 		return
 	}
-	cols := m.cols()
-	page := max(1, m.bodyH()/pitch) * cols
+	cols, page := 1, max(1, m.bodyH()-1)
+	if m.mode == modeGallery {
+		cols = m.cols()
+		page = max(1, m.bodyH()/pitch) * cols
+	}
 	switch k {
 	case "left", "h":
-		m.sel--
+		if m.mode == modeGallery {
+			m.sel--
+		}
 	case "right", "l":
-		m.sel++
+		if m.mode == modeGallery {
+			m.sel++
+		}
 	case "up", "k":
 		m.sel -= cols
 	case "down", "j":
@@ -479,11 +506,19 @@ func (m *Model) resultsW() int {
 func (m *Model) cols() int { return max(1, (m.resultsW()+slotGap)/(slotW+slotGap)) }
 
 func (m *Model) contentH() int {
+	if m.mode == modeList {
+		return len(m.results)
+	}
 	rows := (len(m.results) + m.cols() - 1) / m.cols()
 	return rows*pitch + 1
 }
 
-func (m *Model) viewH() int { return m.bodyH() }
+func (m *Model) viewH() int {
+	if m.mode == modeList {
+		return max(1, m.bodyH()-1) // one line for the column header
+	}
+	return m.bodyH()
+}
 
 func (m *Model) clampScroll() {
 	m.scroll = max(0, min(m.scroll, m.contentH()-m.viewH()))
@@ -492,6 +527,16 @@ func (m *Model) clampScroll() {
 // ensureVisible scrolls so the whole selected slot (with its corner marks) is on screen.
 func (m *Model) ensureVisible() {
 	if m.w == 0 {
+		return
+	}
+	if m.mode == modeList {
+		if m.sel < m.scroll {
+			m.scroll = m.sel
+		}
+		if m.sel >= m.scroll+m.viewH() {
+			m.scroll = m.sel - m.viewH() + 1
+		}
+		m.clampScroll()
 		return
 	}
 	r := m.sel / m.cols()
@@ -509,6 +554,10 @@ func (m *Model) ensureVisible() {
 func (m *Model) keepSelectionInView() {
 	n := len(m.results)
 	if n == 0 {
+		return
+	}
+	if m.mode == modeList {
+		m.sel = max(m.scroll, min(m.sel, m.scroll+m.viewH()-1, n-1))
 		return
 	}
 	cols := m.cols()
@@ -559,11 +608,15 @@ func (m *Model) wheel(ms tea.Mouse) {
 		}
 		return
 	}
+	step := wheelLines
+	if m.mode == modeList {
+		step = 1
+	}
 	switch ms.Button {
 	case tea.MouseWheelUp:
-		m.scroll -= wheelLines
+		m.scroll -= step
 	case tea.MouseWheelDown:
-		m.scroll += wheelLines
+		m.scroll += step
 	default:
 		return
 	}
@@ -604,9 +657,16 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 	if m.card {
 		return m.clickKey(ms)
 	}
+	if m.mode == modeList {
+		for _, k := range m.keys { // the preview's key hints
+			if k.contains(ms.X, ms.Y) {
+				return m.tokenKey(k.key)
+			}
+		}
+	}
 	top := m.headRows() + m.suggestionLines()
 	y, x := ms.Y-top, ms.X-2
-	if y < 0 || y >= m.viewH() || x < 0 {
+	if y < 0 || y >= m.viewH()+boolInt(m.mode == modeList) || x < 0 {
 		return nil
 	}
 	if m.panel.open {
@@ -616,15 +676,23 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 		}
 		x -= panelW + 2
 	}
-	cols := m.cols()
-	gridW := cols*slotW + (cols-1)*slotGap
-	x -= (m.resultsW() - gridW) / 2
-	ln := m.scroll + y
-	r, k := ln/pitch, ln%pitch
-	if x < 0 || x%(slotW+slotGap) >= slotW || k == 0 || x/(slotW+slotGap) >= cols {
-		return nil
+	idx := -1
+	if m.mode == modeList {
+		if _, tableW, _, _ := m.listLayout(m.resultsW(), m.bodyH()); y == 0 || x >= tableW {
+			return nil // the header, or the preview next to the table
+		}
+		idx = m.scroll + y - 1
+	} else {
+		cols := m.cols()
+		gridW := cols*slotW + (cols-1)*slotGap
+		x -= (m.resultsW() - gridW) / 2
+		ln := m.scroll + y
+		r, k := ln/pitch, ln%pitch
+		if x < 0 || x%(slotW+slotGap) >= slotW || k == 0 || x/(slotW+slotGap) >= cols {
+			return nil
+		}
+		idx = r*cols + x/(slotW+slotGap)
 	}
-	idx := r*cols + x/(slotW+slotGap)
 	if idx < 0 || idx >= len(m.results) {
 		return nil
 	}
@@ -637,4 +705,11 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 	m.focus = focusMain
 	m.ensureVisible()
 	return nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

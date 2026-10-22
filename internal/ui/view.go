@@ -21,12 +21,18 @@ func (m *Model) tooSmall() string {
 	return strings.Join(lines, "\n")
 }
 
-// side wraps a content line in the side borders; the right one doubles as the scrollbar.
+// side wraps a content line in the side borders; the right one doubles as the scrollbar. A
+// row that starts on the list's selection bar carries it into the padding, so the bar has a
+// cell of room on both sides.
 func (m *Model) side(l line, thumb bool) string {
 	l = truncate(l, m.innerW())
 	var r row
 	r.put(fg(m.theme.Border), "│")
-	r.space(1)
+	if sel := bg(m.theme.ListSel); strings.HasPrefix(l.s, sel) {
+		r.put(sel, " ")
+	} else {
+		r.space(1)
+	}
 	r.cells(l.s, l.w)
 	r.padTo(m.w - 1)
 	if thumb {
@@ -181,7 +187,12 @@ func padLeft(s string, n int) string {
 
 // zilkroadBody returns the market explorer and, when it scrolls, a scrollbar test per line.
 func (m *Model) zilkroadBody(h int) ([]line, func(int) bool) {
-	res := m.galleryLines(m.resultsW(), h)
+	var res []line
+	if m.mode == modeList {
+		res = m.listLines(m.resultsW(), h)
+	} else {
+		res = m.galleryLines(m.resultsW(), h)
+	}
 	if m.panel.open {
 		pl := m.panel.lines(m, h)
 		for i := range res {
@@ -219,7 +230,7 @@ func (m *Model) helpLines(w, h int) []line {
 		{"MOVE", "hjkl or arrows · PgUp PgDn · Home End · wheel"},
 		{"OPEN", "enter card · esc back · ←→ prev/next in results"},
 		{"FIND", "/ search · tab completes · f filters panel"},
-		{"VIEW", "t theme"},
+		{"VIEW", "v grid or list · t theme"},
 		{"DATA", "r refresh prices · H history (1 request) · z open on zilkroad"},
 		{"QUIT", "q · ctrl+c"},
 		{"", ""},

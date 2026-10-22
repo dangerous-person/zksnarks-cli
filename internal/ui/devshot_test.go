@@ -56,11 +56,13 @@ func TestShots(t *testing.T) {
 			{"H", "card-history-offline"},
 			{"esc esc enter", "card-plain"},
 			{"right right", "card-next"},
-			{"esc ?", "help"},
+			{"esc v", "list"},
+			{"?", "help"},
 		}},
-		{"small", 80, 24, "", []step{{"", "gallery-80x24"}, {"enter", "card-80x24"}}},
+		{"small", 80, 24, "", []step{{"", "gallery-80x24"}, {"enter", "card-80x24"}, {"esc v", "list-80x24"}}},
 		{"min", 60, 20, "lineage:skele sort:price", []step{{"", "gallery-60x20"}, {"enter", "card-60x20"}}},
 		{"tiny", 59, 20, "", []step{{"", "too-small"}}},
+		{"default", 160, 48, "", []step{{"", "zilkroad-default"}, {"v", "zilkroad-default-grid"}}},
 		{"modal-160", 160, 48, "", []step{{"sel:63 enter", "modal63"}, {"esc sel:7724 enter", "modal7724"}, {"esc sel:9701 enter", "modal-apparition"}}},
 		{"green-160", 160, 48, "", []step{{"t", "green-gallery"}, {"sel:63 enter", "green-modal63"}}},
 		{"sections", 120, 40, "", []step{
@@ -76,7 +78,8 @@ func TestShots(t *testing.T) {
 		{"luminaries-wide", 250, 64, "", []step{{"2", "luminaries"}, {"G", "luminaries-end"}}},
 		{"luminaries-edge", 220, 60, "", []step{{"2", "luminaries"}}},
 		{"purged", 120, 40, "purged sort:rank", []step{{"", "gallery-purged"}, {"enter", "card-purged"}, {"a", "card-apparition"}}},
-		{"wide", 180, 50, "listed sort:price", []step{{"", "gallery-180x50"}, {"enter", "card-180x50"}}},
+		{"wide", 180, 50, "listed sort:price", []step{{"", "gallery-180x50"}, {"v", "list-180x50"}, {"enter", "card-180x50"}}},
+		{"list-wide", 250, 64, "", []step{{"v sel:49", "list-250x64"}, {"f", "list-filters-250x64"}, {"esc / type:skele type:space type:rim", "list-typing-250x64"}}},
 		{"provenance", 160, 48, "", []step{
 			{"sel:161 enter", "prov-none"},
 			{"fakehist", "prov-latest"},
@@ -90,7 +93,7 @@ func TestShots(t *testing.T) {
 		{"network-wide", 250, 64, "", []step{{"3", "network"}, {"down", "network-josh"}}},
 	}
 	for _, sc := range scenarios {
-		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad"}})
+		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad", Grid: !strings.HasPrefix(sc.name, "default")}})
 		m.Update(tea.WindowSizeMsg{Width: sc.w, Height: sc.h})
 		for _, st := range sc.steps {
 			for _, k := range strings.Fields(st.keys) {

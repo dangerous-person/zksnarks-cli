@@ -227,9 +227,6 @@ func (p *panel) lines(m *Model, h int) []line {
 	return out[:h]
 }
 
-// pointer marks the selected row of the filters and the completions.
-const pointer = "›"
-
 func (p *panel) drawRow(m *Model, r *row, i, inner int) {
 	pr := p.rows[i]
 	if pr.heading != "" {

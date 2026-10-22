@@ -305,9 +305,13 @@ func (m *Model) footerHints() []line {
 		}
 		return []line{m.hints("1-3", "section", "?", "help")}
 	}
+	other := "list"
+	if m.mode == modeList {
+		other = "grid"
+	}
 	return []line{
-		m.hints("enter", "open", "f", "filters", "1-3", "section", "?", "help"),
-		m.hints("enter", "open", "f", "filters", "?", "help"),
+		m.hints("enter", "open", "f", "filters", "v", other, "1-3", "section", "?", "help"),
+		m.hints("enter", "open", "f", "filters", "v", other, "?", "help"),
 		m.hints("f", "filters", "?", "help"),
 	}
 }

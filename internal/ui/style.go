@@ -37,6 +37,9 @@ type Theme struct {
 	Selection art.RGB `json:"selection"` // corner marks and the selected token's number
 	Price     art.RGB `json:"price"`     // asking prices under thumbnails
 
+	ListSel  art.RGB `json:"listSel"`  // the selected row in the list
+	ListHead art.RGB `json:"listHead"` // the list's column names, as quiet as the market strip's words
+
 	Market      art.RGB `json:"market"`      // the market strip's values
 	MarketLabel art.RGB `json:"marketLabel"` // the words around them
 	MarketSep   art.RGB `json:"marketSep"`   // the "~" between the strip's parts
@@ -66,7 +69,7 @@ func palette(name string, border, corner, accent, text, dim, warn, good, panel a
 		Brand: accent, NavKey: accent, NavLabel: dim, NavActiveBg: accent, NavActiveFg: ink,
 		Prompt: accent, Input: text,
 		Selection: accent, Price: text,
-		BodyBg: art.RGB{},
+		BodyBg: art.RGB{}, ListSel: mix(art.RGB{}, border, 0.3), ListHead: mix(dim, art.RGB{}, 0.3),
 		Market: dim, MarketLabel: mix(dim, art.RGB{}, 0.3), MarketSep: mix(dim, art.RGB{}, 0.45), Status: dim, HintKey: accent, HintBracket: border, HintLabel: dim,
 		Heading: dim, TraitBorder: mix(border, panel, 0.3), TraitFloor: mix(dim, panel, 0.3),
 		ModalBg: panel, ModalBorder: border, ModalTitleBg: border, ModalTitleFg: art.RGB{255, 255, 255},

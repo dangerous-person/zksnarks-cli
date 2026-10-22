@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas"
 )
@@ -100,4 +102,23 @@ func (m *Model) emptyLines(w, h int) []line {
 		out[y+2] = r2.line()
 	}
 	return out
+}
+
+// swatch is the most common non-black colour of a token, for the list view.
+func swatch(a art.Art) art.RGB {
+	counts := make([]int, len(a.Palette))
+	for _, p := range a.Pix {
+		counts[p]++
+	}
+	best, bestN := art.RGB{}, -1
+	for i, n := range counts {
+		if c := a.Palette[i]; c != (art.RGB{}) && n > bestN {
+			best, bestN = c, n
+		}
+	}
+	return best
+}
+
+func bgCell(c art.RGB, s string) string {
+	return strings.Replace(fg(c), "38;", "48;", 1) + s + reset
 }
