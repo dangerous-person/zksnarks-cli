@@ -39,6 +39,12 @@ func stream(w, h int, palette []art.RGB, symbols string, keyEvery int, frames ..
 	return b.Bytes()
 }
 
+func filled(fill byte, zkc1 []byte, palette int, symbols string) []byte {
+	head := 18 + palette*3 + 1 + len(symbols)
+	out := append([]byte("ZKC2"), zkc1[4:head]...)
+	return append(append(out, fill), zkc1[head:]...)
+}
+
 func zip(streams ...[]byte) []byte {
 	var b bytes.Buffer
 	z := gzip.NewWriter(&b)
@@ -144,6 +150,19 @@ func TestFrames(t *testing.T) {
 	}
 }
 
+func TestFill(t *testing.T) {
+	orange := art.RGB{200, 100, 50}
+	pal := []art.RGB{{}, orange}
+	v, err := Read(zip(filled(128, stream(2, 1, pal, " #", 1, []byte{1, 1, 0, 0}), len(pal), " #")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]cell{{{"#", "200;100;50", "100;50;25"}, {" ", "", ""}}}
+	if got := cells(t, v.Frame(0, art.UpperHalf)); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestDamaged(t *testing.T) {
 	good := stream(2, 2, []art.RGB{{}}, "", 1, []byte{0, 0, 0, 0})
 	for name, data := range map[string][]byte{
@@ -153,6 +172,7 @@ func TestDamaged(t *testing.T) {
 		"odd":       zip(stream(2, 3, []art.RGB{{}}, "", 1, []byte{0, 0, 0, 0, 0, 0})),
 		"sizes":     zip(good, stream(3, 2, []art.RGB{{}}, "", 1, []byte{0, 0, 0, 0, 0, 0})),
 		"empty":     zip(),
+		"no fill":   zip(append([]byte("ZKC2"), stream(1, 1, []art.RGB{{}}, " ", 1, []byte{0, 0})[4:]...)),
 	} {
 		if _, err := Read(data); err == nil {
 			t.Errorf("%s: no error", name)

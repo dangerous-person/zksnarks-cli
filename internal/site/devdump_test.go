@@ -18,13 +18,13 @@ func TestDump(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := s.Manifesto
-	fmt.Printf("command %q, lead %d spans (hi: ", m.Command, len(m.Lead))
+	fmt.Printf("lead %d spans (hi: ", len(m.Lead))
 	for _, sp := range m.Lead {
 		if sp.Hi {
 			fmt.Printf("%q ", sp.Text)
 		}
 	}
-	fmt.Printf("), body %d chars\ntitle %q byline %q signature %q date %q armor %d lines\n", len(m.Body), m.Title, m.Byline, m.Signature, m.Date, len(fmtLines(m.Armor)))
+	fmt.Printf("), body %d chars\ntitle %q signature %q date %q\n", len(m.Body), m.Title, m.Signature, m.Date)
 	for i, p := range m.Paras {
 		n, hi := 0, 0
 		for _, sp := range p {

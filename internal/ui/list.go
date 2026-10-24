@@ -141,9 +141,9 @@ func (m *Model) listLines(w, h int) []line {
 	}
 	var artLines []string
 	if big {
-		artLines = m.cardArt(m.results[m.sel])
+		artLines = m.previewArt(m.results[m.sel])
 	} else {
-		artLines = m.thumb(m.results[m.sel])
+		artLines = m.previewThumb(m.results[m.sel])
 	}
 	x := tableW + max(2, (w-tableW-previewW)/2)
 	ox := 2 + x // the frame's border and padding, and the filters panel when it is open
@@ -223,7 +223,7 @@ func (m *Model) previewInfo(t *atlas.Token, w, h, ox, oy int) []line {
 	}
 	out = append(out, market...)
 	if len(out)+2 <= h {
-		out = append(out, rule, m.cardKeys(len(out)+1, ox, oy, w, [3]string{"z", "open zilkroad", "zilkroad"}, [3]string{"H", "show history", "history"}))
+		out = append(out, rule, m.cardKeys(len(out)+1, ox, oy, w, m.tokenKeys(t)...))
 	}
 	return out
 }

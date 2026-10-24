@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/ebitengine/oto/v3 v3.5.1
 	github.com/hajimehoshi/go-mp3 v0.3.4
+	rsc.io/qr v0.2.0
 )
 
 require (

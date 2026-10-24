@@ -35,7 +35,7 @@ func (m *Model) cardKey(k string) tea.Cmd {
 	case "esc", "backspace", "enter":
 		m.card = false
 		m.ensureVisible()
-	case "left", "h", "k", "up":
+	case "left", "k", "up":
 		if m.sel > 0 {
 			m.sel--
 		}
@@ -43,18 +43,14 @@ func (m *Model) cardKey(k string) tea.Cmd {
 		if m.sel < len(m.results)-1 {
 			m.sel++
 		}
-	case "H", "shift+h":
+	case "h", "H", "shift+h":
 		return m.toggleHistory()
 	case "z", "o":
 		if t, ok := m.selected(); ok {
 			return openURL(zilkroadURL(t.ID))
 		}
 	case "a":
-		if t, ok := m.selected(); ok && t.PurgedFor != 0 {
-			if ap, ok := m.opts.Atlas.Meta.ApparitionBySlot(t.PurgedFor); ok {
-				return m.jump(ap.Token)
-			}
-		}
+		return m.tokenKey(k)
 	}
 	return nil
 }
@@ -118,20 +114,6 @@ func (m *Model) cardInfo(t *atlas.Token, w, h int, titled bool, ox, oy int) []li
 	meta := &m.opts.Atlas.Meta
 	switch {
 	case t.Purged:
-		msg := "purged"
-		if ap, ok := meta.ApparitionBySlot(t.PurgedFor); ok {
-			msg = "purged to unveil " + ap.Name
-			if at, ok := parseTime(ap.UnlockedAt); ok {
-				msg += " · " + at.Local().Format("Jan 2")
-			}
-		}
-		add(text(fg(m.theme.Warn), clip(msg, w)))
-		if ap, ok := meta.ApparitionBySlot(t.PurgedFor); ok {
-			var r row
-			r.put(fg(m.theme.Accent), "[a]")
-			r.put(fg(m.theme.Dim), clip(" open "+ap.Name+" #"+itoa(ap.Token), w-3))
-			add(r.line())
-		}
 	case t.Apparition != 0:
 		msg := "apparition " + itoa(t.Apparition)
 		if ap, ok := meta.ApparitionBySlot(t.Apparition); ok {
@@ -160,27 +142,61 @@ func (m *Model) cardInfo(t *atlas.Token, w, h int, titled bool, ox, oy int) []li
 		add(l)
 	}
 	add(line{})
-	add(text(bold(m.theme.Text), "MARKET_"))
-	if t.Listed && t.Ask != "" {
-		add(kv(m, "asking", zec(t.Ask)+" ZEC", m.usdText(t.Ask), w))
+	if t.Purged {
+		add(text(bold(m.theme.Text), "PURGED_"))
+		if ap, ok := meta.ApparitionBySlot(t.PurgedFor); ok {
+			add(kv(m, "apparition", twoDigits(ap.Slot)+" #"+itoa(ap.Token)+"_", "", w))
+			if at, ok := parseTime(ap.UnlockedAt); ok {
+				add(kv(m, "date", at.Local().Format("Jan 2, 2006"), "", w))
+			}
+		} else {
+			add(kv(m, "status", "purged", "", w))
+		}
 	} else {
-		add(kv(m, "status", "not for sale", "", w))
+		add(text(bold(m.theme.Text), "MARKET_"))
+		if t.Listed && t.Ask != "" {
+			add(kv(m, "asking", zec(t.Ask)+" ZEC", m.usdText(t.Ask), w))
+		} else {
+			add(kv(m, "status", "not for sale", "", w))
+		}
+		if t.Bid != "" {
+			add(kv(m, "best bid", zec(t.Bid)+" ZEC", m.usdText(t.Bid), w))
+		}
+		if at, ok := parseTime(t.ListedAt); ok && t.Listed {
+			add(kv(m, "listed", ago(at, time.Now()), "", w))
+		}
+		add(kv(m, "last sale", lastText(t.Last), "", w))
 	}
-	if t.Bid != "" {
-		add(kv(m, "best bid", zec(t.Bid)+" ZEC", m.usdText(t.Bid), w))
-	}
-	if at, ok := parseTime(t.ListedAt); ok && t.Listed {
-		add(kv(m, "listed", ago(at, time.Now()), "", w))
-	}
-	add(kv(m, "last sale", lastText(t.Last), "", w))
 	if m.artChanged[t.ID] {
 		add(text(fg(m.theme.Warn), clip("art changed since this build", w)))
 	}
 	add(line{})
 	if len(out) < h {
-		add(m.cardKeys(len(out), ox, oy, w, [3]string{"z", "open zilkroad", "zilkroad"}, [3]string{"H", "show history", "history"}))
+		add(m.cardKeys(len(out), ox, oy, w, m.tokenKeys(t)...))
 	}
 	return out[:max(0, min(len(out), h))]
+}
+
+func (m *Model) tokenKeys(t *atlas.Token) [][3]string {
+	if ap, ok := m.burntFor(t); ok {
+		show := "show #" + itoa(ap.Token) + "_"
+		return [][3]string{{"a", show, show}, {"z", "zilkroad", "zilkroad"}, {"h", "history", "history"}}
+	}
+	return [][3]string{{"z", "open zilkroad", "zilkroad"}, {"h", "show history", "history"}}
+}
+
+func (m *Model) burntFor(t *atlas.Token) (atlas.Apparition, bool) {
+	if !t.Purged || t.PurgedFor == 0 {
+		return atlas.Apparition{}, false
+	}
+	return m.opts.Atlas.Meta.ApparitionBySlot(t.PurgedFor)
+}
+
+func twoDigits(n int) string {
+	if n < 10 {
+		return "0" + itoa(n)
+	}
+	return itoa(n)
 }
 
 // title is the token's name the way the site writes it.

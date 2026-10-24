@@ -13,6 +13,7 @@ import (
 	"github.com/dangerous-person/zksnarks-cli/internal/market"
 	"github.com/dangerous-person/zksnarks-cli/internal/search"
 	"github.com/dangerous-person/zksnarks-cli/internal/site"
+	"github.com/dangerous-person/zksnarks-cli/internal/video"
 )
 
 const (
@@ -77,8 +78,9 @@ type Model struct {
 	box     rect      // where the overlaid card was last drawn, for clicks outside it
 	keys    []keyRect // the card's clickable key hints
 	focus   focus
-	help    bool
 
+	reading    bool
+	readTop    int
 	spot       int         // network: the picked spotlight
 	netTop     int         // the network page's first visible line
 	netFollow  bool        // scroll the page to the picked spotlight
@@ -86,11 +88,16 @@ type Model struct {
 	watchOpen  bool        // the interview's window is open
 	screen     rect        // where its video is, as last drawn
 
-	lumTop             int       // luminaries: first visible line
-	lumTicks           int       // steps of the empty slot's animation, which also blink its cursor
-	ticking            bool      // the luminaries' and network's animations are running
-	lumDrips, netDrips *dripping // the headings' drops
-	shed               *shedding // the empty slot's figure
+	lumTop                        int       // luminaries: first visible line
+	lumTicks                      int       // steps of the empty slot's animation, which also blink its cursor
+	ticking                       bool      // the luminaries' and network's animations are running
+	rootDrips, lumDrips, netDrips *dripping // the headings' drops
+	shed                          *shedding // the empty slot's figure
+
+	front        *still
+	frontRead    bool
+	stillTicking bool
+	rootWatch    rect
 
 	input     input
 	inputWas  string // query text when the search box got focus, for esc
@@ -104,23 +111,40 @@ type Model struct {
 	statusCnt map[string]int
 	panel     panel
 
-	thumbs map[int][]string
-	cards  map[int][]string
+	thumbs   map[int][]string
+	cards    map[int][]string
+	previews map[int][]string
 
-	stats      *market.Stats
-	rate       *market.Rate
-	marketAt   time.Time // last successful snapshot
-	marketErr  error
-	lastEvent  string // time of the newest applied event
-	floors     [6]map[string]float64
-	floor      float64
-	histories  map[int]*history
-	histFor    int // the token whose full history the card shows instead of its details
-	histTop    int // first visible line of that history
+	stats     *market.Stats
+	rate      *market.Rate
+	marketAt  time.Time // last successful snapshot
+	marketErr error
+	lastEvent string // time of the newest applied event
+	floors    [6]map[string]float64
+	floor     float64
+	histories map[int]*history
+	histFor   int // the token whose full history the card shows instead of its details
+	histTop   int // first visible line of that history
+
 	artChanged map[int]bool
 
 	interviews map[int]*interview // by spotlight; nil when there is none
 	watch      watch
+	mont       montagePlayer
+
+	contactOpen     bool
+	contactCopied   bool
+	contactShow     rect
+	contactQR       []contactCode
+	contactClip     *video.Video
+	contactClipRead bool
+	contactTicking  bool
+	contactPlaying  bool
+	contactFrame    int
+	contactPic      rect
+
+	shimmerTicking bool
+	shimmerAt      int
 }
 
 // New builds the model. Tokens are copied so live market data can be applied in place.
@@ -131,10 +155,12 @@ func New(o Options) *Model {
 		byID:       map[int]int{},
 		thumbs:     map[int][]string{},
 		cards:      map[int][]string{},
+		previews:   map[int][]string{},
 		histories:  map[int]*history{},
 		artChanged: map[int]bool{},
 		interviews: map[int]*interview{},
 		theme:      themes[0],
+		shimmerAt:  -1,
 		suggSel:    -1,
 		lastEvent:  o.Atlas.Meta.SnapshotAt,
 	}
@@ -146,13 +172,13 @@ func New(o Options) *Model {
 			m.theme = t
 		}
 	}
+	if !o.State.Grid {
+		m.mode = modeList
+	}
 	for i, name := range sectionNames {
 		if name == o.State.Section {
 			m.section = i
 		}
-	}
-	if !o.State.Grid {
-		m.mode = modeList
 	}
 	m.ix = search.NewIndex(m.tokens)
 	m.input.set(o.State.Query)
@@ -166,15 +192,17 @@ func (m *Model) SavedState() State {
 	return State{Query: m.input.text, Grid: m.mode == modeGallery, Theme: m.theme.Name, Section: sectionNames[m.section]}
 }
 
-// Init starts the market feed, and the page's animation when the app opens on the
-// luminaries or the network.
 func (m *Model) Init() tea.Cmd {
 	var cmds []tea.Cmd
-	if m.section == secLuminaries || m.section == secNetwork {
+	switch m.section {
+	case secRoot:
+		cmds = append(cmds, m.startPageTick(), m.startStill())
+	case secLuminaries, secNetwork:
 		cmds = append(cmds, m.startPageTick())
 	}
+	cmds = append(cmds, m.startShimmer())
 	if m.online() {
-		cmds = append(cmds, m.fetchSnapshot(), m.fetchStats(), m.fetchRate(), tickEvents(), tickSnapshot(), tickRate())
+		cmds = append(cmds, m.fetchSnapshot(), m.fetchStats(), m.fetchRate(), tickEvents(), tickSnapshot(), tickRate(), m.fetchTrack())
 	}
 	return tea.Batch(cmds...)
 }
@@ -239,6 +267,25 @@ func (m *Model) cardArt(i int) []string {
 	return c
 }
 
+func (m *Model) previewArt(i int) []string {
+	if !m.tokens[i].Purged {
+		return m.cardArt(i)
+	}
+	if c, ok := m.previews[i]; ok {
+		return c
+	}
+	c := art.Card(m.tokens[i].Art)
+	m.previews[i] = c
+	return c
+}
+
+func (m *Model) previewThumb(i int) []string {
+	if !m.tokens[i].Purged {
+		return m.thumb(i)
+	}
+	return art.Thumb(m.tokens[i].Art, m.opts.Glyph)
+}
+
 // artOf is the art to draw for a token: greyscale once it is purged, as on the site.
 func (m *Model) artOf(i int) art.Art {
 	if m.tokens[i].Purged {
@@ -266,6 +313,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onPageTick()
 	case watchTickMsg:
 		return m, m.onWatchTick(msg)
+	case stillTickMsg:
+		return m, m.onStillTick()
+	case shimmerTickMsg:
+		return m, m.onShimmerTick()
+	case contactTickMsg:
+		return m, m.onContactTick()
+	case montageTickMsg:
+		return m, m.onMontageTick(msg)
+	case montageTrackMsg:
+		return m, m.onMontageTrack(msg)
+	case montageSoundMsg:
+		m.onMontageSound(msg)
+		return m, nil
 	case soundMsg:
 		m.onSound(msg)
 		return m, nil
@@ -296,26 +356,19 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	if m.focus == focusQuery {
 		return m.queryKey(msg, k)
 	}
-	if m.help {
-		m.help = false
-		return nil
-	}
 	if m.focus == focusFilters {
 		return m.panelKey(msg, k)
 	}
 	switch k {
 	case "q":
 		return tea.Quit
-	case "?":
-		m.help = true
-		return nil
 	case "t":
 		m.cycleTheme()
 		return nil
 	case "r":
 		return m.refreshMarket()
-	case "1", "2", "3":
-		return m.setSection(int(k[0] - '1'))
+	case "0", "1", "2", "3", "4", "5":
+		return m.setSection(int(k[0] - '0'))
 	case "/":
 		m.setSection(secZilkroad)
 		m.card = false
@@ -323,11 +376,17 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	switch m.section {
+	case secRoot:
+		return m.rootKey(k)
+	case secManifesto:
+		return m.manifestoKey(k)
 	case secLuminaries:
 		m.luminaryKey(k)
 		return nil
 	case secNetwork:
 		return m.networkKey(k)
+	case secAbout:
+		return m.contactKey(k)
 	}
 	if m.card {
 		return m.cardKey(k)
@@ -335,8 +394,13 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	switch k {
 	case "f":
 		m.openPanel()
-	case "z", "H", "shift+h":
+	case "z", "a", "H", "shift+h":
 		return m.tokenKey(k)
+	case "h":
+		if m.mode == modeList {
+			return m.tokenKey(k)
+		}
+		m.move(k)
 	case "v":
 		if m.mode == modeGallery {
 			m.mode = modeList
@@ -360,36 +424,42 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// tokenKey opens the selected token on zilkroad (z) or its history on the card (H), from
-// the results; the list's preview shows both keys.
 func (m *Model) tokenKey(k string) tea.Cmd {
 	t, ok := m.selected()
 	if !ok {
 		return nil
 	}
-	if k == "z" {
+	switch k {
+	case "z":
 		return openURL(zilkroadURL(t.ID))
+	case "a":
+		if ap, ok := m.burntFor(t); ok {
+			return m.jump(ap.Token)
+		}
+		return nil
 	}
 	m.card, m.histFor = true, 0
 	return m.toggleHistory()
 }
 
-// setSection switches sections; the luminaries and network pages start their animation.
 func (m *Model) setSection(s int) tea.Cmd {
 	if s < 0 || s >= len(sectionNames) || s == m.section {
 		return nil
 	}
 	m.section = s
-	m.help = false
-	m.closePlayer() // the network page is the only one that plays
-	if s == secZilkroad {
+	m.closePlayer()
+	m.closeMontage()
+	m.contactOpen, m.contactCopied = false, false
+	shimmer := m.startShimmer()
+	switch {
+	case s == secZilkroad:
 		m.ensureVisible()
-		return nil
-	}
-	if s == secLuminaries || s == secNetwork {
+	case s == secRoot:
+		return tea.Batch(shimmer, m.startPageTick(), m.startStill())
+	case s == secLuminaries || s == secNetwork:
 		return m.startPageTick()
 	}
-	return nil
+	return shimmer
 }
 
 func (m *Model) focusQuery() {
@@ -587,10 +657,18 @@ func (m *Model) keepSelectionInView() {
 }
 
 func (m *Model) wheel(ms tea.Mouse) {
-	if m.help {
-		return
-	}
 	switch m.section {
+	case secManifesto:
+		if m.reading {
+			if ms.Button == tea.MouseWheelUp {
+				m.readTop -= wheelLines
+			} else if ms.Button == tea.MouseWheelDown {
+				m.readTop += wheelLines
+			}
+		}
+		return
+	case secRoot:
+		return
 	case secLuminaries:
 		switch ms.Button {
 		case tea.MouseWheelUp:
@@ -642,7 +720,7 @@ func (m *Model) wheel(ms tea.Mouse) {
 }
 
 func (m *Model) click(ms tea.Mouse) tea.Cmd {
-	if ms.Button != tea.MouseLeft || m.help {
+	if ms.Button != tea.MouseLeft {
 		return nil
 	}
 	if ms.Y == 1 {
@@ -654,8 +732,13 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 		}
 		return nil
 	}
-	if m.section == secNetwork {
+	switch m.section {
+	case secRoot:
+		return m.rootClick(ms)
+	case secNetwork:
 		return m.networkClick(ms)
+	case secAbout:
+		return m.contactClick(ms)
 	}
 	if m.section != secZilkroad {
 		return nil

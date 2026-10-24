@@ -33,7 +33,7 @@ func main() {
 	colorFlag := fs.String("color", "auto", "colour profile: auto, truecolor or 256")
 	glyphFlag := fs.String("glyph", "auto", "cell split glyph: auto, half (▀) or five-eighths (▅, for Terminal.app)")
 	query := fs.String("q", "", "start with this search query")
-	media := fs.String("media", "", "folder with the spotlight interviews, NAME.zkv and NAME.mp3 (default: media next to the program or in the current folder)")
+	media := fs.String("media", "", "folder with the spotlight interviews (NAME.zkv and NAME.mp3), the front page's still (front.zkv), the trailer (trailer/montage.json) and the about page's clip (noisebody.zkv) (default: media next to the program or in the current folder)")
 	showVersion := fs.Bool("version", false, "print the version")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: zksnarks [flags]\n       zksnarks [flags] print [-card] N...\n\n")

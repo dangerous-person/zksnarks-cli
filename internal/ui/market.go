@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"math"
 	"sort"
 	"time"
 
@@ -272,19 +273,21 @@ func (m *Model) computeFloors() {
 	}
 }
 
+func (m *Model) marketPart(words ...string) line {
+	var r row
+	for i, s := range words {
+		if i%2 == 0 {
+			r.put(fg(m.theme.MarketLabel), s)
+		} else {
+			r.put(fg(m.theme.Market), s)
+		}
+	}
+	return r.line()
+}
+
 // marketParts is the market strip's summary, muted words around slightly brighter values.
 func (m *Model) marketParts() []line {
-	part := func(words ...string) line { // word, value, word, value...
-		var r row
-		for i, s := range words {
-			if i%2 == 0 {
-				r.put(fg(m.theme.MarketLabel), s)
-			} else {
-				r.put(fg(m.theme.Market), s)
-			}
-		}
-		return r.line()
-	}
+	part := m.marketPart
 	var parts []line
 	if m.floor > 0 {
 		parts = append(parts, part("floor ", zecFloat(m.floor)+" ZEC"))
@@ -306,7 +309,6 @@ func zecShort(s string) string {
 	return trimFloat(p)
 }
 
-// statusLine reports network use, so it is visible that browsing sends nothing per token.
 func (m *Model) statusLine() line {
 	parts := func(style string, ss ...string) line {
 		var l []line
@@ -315,11 +317,9 @@ func (m *Model) statusLine() line {
 		}
 		return m.tildes(l, m.w)
 	}
-	dim := fg(m.theme.Status)
 	if !m.online() {
-		return parts(dim, "offline", "prices as of "+snapshotDate(m.opts.Atlas))
+		return parts(fg(m.theme.Status), "offline", "prices as of "+snapshotDate(m.opts.Atlas))
 	}
-	total, perToken, last := m.opts.Client.Net.Requests()
 	if m.marketErr != nil {
 		since := "build"
 		if !m.marketAt.IsZero() {
@@ -327,11 +327,27 @@ func (m *Model) statusLine() line {
 		}
 		return parts(fg(m.theme.Warn), "market unreachable", "prices as of "+since)
 	}
-	ss := []string{"net " + itoa(total) + " req"}
-	if !last.IsZero() {
-		ss = append(ss, ago(last, time.Now()))
+	l := []line{m.marketPart("works ", m.worksText())}
+	if v := m.volumeText(); v != "" {
+		l = append(l, m.marketPart("volume ", v))
 	}
-	return parts(dim, append(ss, itoa(perToken)+" per-token")...)
+	return m.tildes(l, m.w)
+}
+
+func (m *Model) worksText() string {
+	if s := m.stats; s != nil && s.Supply > 0 {
+		return comma(s.Supply)
+	}
+	return comma(m.opts.Atlas.Meta.Supply)
+}
+
+func (m *Model) volumeText() string {
+	if s := m.stats; s != nil {
+		if v, ok := search.Price(string(s.VolumeTotal)); ok {
+			return comma(int(math.Round(v))) + " ZEC"
+		}
+	}
+	return ""
 }
 
 func snapshotDate(a *atlas.Atlas) string {

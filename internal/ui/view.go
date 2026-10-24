@@ -24,10 +24,14 @@ func (m *Model) tooSmall() string {
 // side wraps a content line in the side borders; the right one doubles as the scrollbar. A
 // row that starts on the list's selection bar carries it into the padding, so the bar has a
 // cell of room on both sides.
-func (m *Model) side(l line, thumb bool) string {
+func (m *Model) side(l line, thumb, corner bool) string {
 	l = truncate(l, m.innerW())
+	edge := fg(m.theme.Frame)
+	if corner {
+		edge = fg(m.theme.Corner)
+	}
 	var r row
-	r.put(fg(m.theme.Border), "│")
+	r.put(edge, "│")
 	if sel := bg(m.theme.ListSel); strings.HasPrefix(l.s, sel) {
 		r.put(sel, " ")
 	} else {
@@ -38,27 +42,14 @@ func (m *Model) side(l line, thumb bool) string {
 	if thumb {
 		r.put(fg(m.theme.Scrollbar), "┃")
 	} else {
-		r.put(fg(m.theme.Border), "│")
+		r.put(edge, "│")
 	}
-	return r.String()
-}
-
-// sideFaded is a side-bordered line next to a corner, so both side borders fade.
-func (m *Model) sideFaded(l line) string {
-	l = truncate(l, m.innerW())
-	var r row
-	r.put(fg(m.theme.Corner), "│")
-	r.space(1)
-	r.cells(l.s, l.w)
-	r.padTo(m.w - 2)
-	r.space(1)
-	r.put(fg(m.theme.Corner), "│")
 	return r.String()
 }
 
 func (m *Model) separator() string {
 	var r row
-	r.put(fg(m.theme.Border), "├"+strings.Repeat("─", m.w-2)+"┤")
+	r.put(fg(m.theme.Frame), "├"+strings.Repeat("─", m.w-2)+"┤")
 	return r.String()
 }
 
@@ -223,54 +214,3 @@ func (m *Model) scrollbar(h int) func(int) bool {
 }
 
 func searchKey(k int) string { return search.KeyName(k) }
-
-func (m *Model) helpLines(w, h int) []line {
-	keys := [][2]string{
-		{"GO", "1 zilkroad · 2 luminaries · 3 network"},
-		{"MOVE", "hjkl or arrows · PgUp PgDn · Home End · wheel"},
-		{"OPEN", "enter card · esc back · ←→ prev/next in results"},
-		{"FIND", "/ search · tab completes · f filters panel"},
-		{"VIEW", "v grid or list · t theme"},
-		{"DATA", "r refresh prices · H history (1 request) · z open on zilkroad"},
-		{"WATCH", "enter watch a spotlight interview · p pause · s stop · esc close"},
-		{"APPLY", "a apply for a spotlight on zksnarks.net"},
-		{"QUIT", "q · ctrl+c"},
-		{"", ""},
-		{"QUERY", "skele rim · eyes:\"rim cobalt\" · lineage:noise,dune"},
-		{"", "#7724 · listed · purged · apparition · auction"},
-		{"", "price<1.5 · rank<=100 · last>2"},
-		{"", "sort:price · sort:-price · sort:rank · sort:new"},
-	}
-	bw := 0
-	for _, k := range keys {
-		bw = max(bw, 8+width(k[1]))
-	}
-	bw = min(bw+4, w)
-	var box []line
-	b := fg(m.theme.Border)
-	box = append(box, text(b, "╭─ keys "+strings.Repeat("─", max(0, bw-9))+"╮"))
-	for _, k := range keys {
-		var r row
-		r.put(b, "│ ")
-		r.put(bold(m.theme.Accent), k[0])
-		r.padTo(10)
-		r.put(fg(m.theme.Text), clip(k[1], bw-12))
-		r.padTo(bw - 1)
-		r.put(b, "│")
-		box = append(box, r.line())
-	}
-	box = append(box, text(b, "╰"+strings.Repeat("─", max(0, bw-2))+"╯"))
-	out := make([]line, h)
-	top := max(0, (h-len(box))/2)
-	left := max(0, (w-bw)/2)
-	for i, l := range box {
-		if top+i >= h {
-			break
-		}
-		var r row
-		r.space(left)
-		r.cells(l.s, l.w)
-		out[top+i] = r.line()
-	}
-	return out
-}

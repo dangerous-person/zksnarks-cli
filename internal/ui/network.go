@@ -121,7 +121,7 @@ func (m *Model) playerKey(k string) tea.Cmd {
 }
 
 // playerOpen reports whether the interview's window is over the network page.
-func (m *Model) playerOpen() bool { return m.section == secNetwork && m.watchOpen && !m.help }
+func (m *Model) playerOpen() bool { return m.section == secNetwork && m.watchOpen }
 
 // networkClick picks the spotlight clicked and plays its interview when it has one; with the
 // window open, a click on the video pauses or resumes it and one outside closes the window.

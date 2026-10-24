@@ -18,7 +18,7 @@ import (
 
 const (
 	Origin    = "https://zilkroad.com"
-	userAgent = "zksnarks-cli/0.1 (unofficial; +https://github.com/dangerous-person/zksnarks-cli)"
+	UserAgent = "zksnarks-cli/0.1 (unofficial; +https://github.com/dangerous-person/zksnarks-cli)"
 )
 
 // Decimal is a ZEC amount; the API writes amounts as strings, sometimes as numbers or null.
@@ -178,7 +178,7 @@ func (c *Client) get(ctx context.Context, path string, perToken bool, v any) err
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", UserAgent)
 	c.Net.add(perToken)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

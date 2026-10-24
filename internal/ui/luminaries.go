@@ -499,6 +499,8 @@ func pageTick() tea.Cmd {
 
 func (m *Model) onPageTick() tea.Cmd {
 	switch m.section {
+	case secRoot:
+		m.drips(&m.rootDrips, rootFont, 13).step()
 	case secLuminaries:
 		m.lumTicks++
 		m.shedding().step()

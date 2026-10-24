@@ -141,9 +141,12 @@ func padding(data []byte) int {
 			lame += size
 		}
 	}
-	if lame+24 <= len(data) && (string(data[lame:lame+4]) == "LAME" || string(data[lame:lame+4]) == "Lavc") {
-		delay := int(data[lame+21])<<4 | int(data[lame+22])>>4
-		samples += delay + 529
+	if lame+24 <= len(data) {
+		switch string(data[lame : lame+4]) {
+		case "LAME", "Lavc", "Lavf":
+			delay := int(data[lame+21])<<4 | int(data[lame+22])>>4
+			samples += delay + 529
+		}
 	}
 	return samples
 }
@@ -158,6 +161,12 @@ func (t *Track) Pause() { t.player.Pause() }
 func (t *Track) Rewind() {
 	t.player.Pause()
 	t.player.Seek(0, io.SeekStart)
+}
+
+func (t *Track) Seek(d time.Duration) {
+	t.player.Pause()
+	off := int64(d) * bytesPerSecond / int64(time.Second)
+	t.player.Seek(off-off%4, io.SeekStart)
 }
 
 // Playing reports whether the sound is playing; it stops by itself at the end.

@@ -29,6 +29,7 @@ func TestPadding(t *testing.T) {
 	}{
 		{"ffmpeg", frame(false, "Info", "Lavc62.28", 0x0f), 2257},
 		{"with ID3", frame(true, "Info", "Lavc62.28", 0x0f), 2257},
+		{"ffmpeg, bitexact", frame(false, "Info", "Lavf lame", 0x0f), 2257},
 		{"LAME, VBR", frame(false, "Xing", "LAME3.100", 0x0f), 2257},
 		{"no table", frame(false, "Info", "LAME3.100", 0x0b), 2257},
 		{"no encoder tag", frame(false, "Info", "Other", 0x0f), 1152},

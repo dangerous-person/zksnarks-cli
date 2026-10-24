@@ -34,6 +34,8 @@ func newCanvas(w, h int) *canvas {
 	return cv
 }
 
+func (c *cell) empty() bool { return c == nil || c.r == ' ' && (!c.hasBg || c.bg == art.RGB{}) }
+
 func (cv *canvas) at(x, y int) *cell {
 	if x < 0 || y < 0 || x >= cv.w || y >= cv.h {
 		return nil

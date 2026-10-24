@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -18,18 +19,17 @@ type Theme struct {
 	Dim    art.RGB `json:"dim"`    // secondary text, placeholders
 	Accent art.RGB `json:"accent"` // highlights not covered by a token below
 	Warn   art.RGB `json:"warn"`   // purged, errors
-	Good   art.RGB `json:"good"`   // green highlights
 
-	Border    art.RGB `json:"border"`    // box lines and separators
-	Corner    art.RGB `json:"corner"`    // corners and the dashes next to them
+	Border    art.RGB `json:"border"`
+	Frame     art.RGB `json:"frame"`
+	Corner    art.RGB `json:"corner"`
+	CornerTip art.RGB `json:"cornerTip"`
 	Scrollbar art.RGB `json:"scrollbar"` // scrollbar thumb
 	BodyBg    art.RGB `json:"bodyBg"`    // inside the frame: black like the art's own background, so the art's edges show
 
-	Brand       art.RGB `json:"brand"`       // zkSNARKs
-	NavKey      art.RGB `json:"navKey"`      // the digits in [1]
-	NavLabel    art.RGB `json:"navLabel"`    // inactive section names and brackets' text
-	NavActiveBg art.RGB `json:"navActiveBg"` // the active section's background
-	NavActiveFg art.RGB `json:"navActiveFg"` // the active section's text
+	Brand    art.RGB `json:"brand"`    // zkSNARKs
+	NavKey   art.RGB `json:"navKey"`   // the digits in [1]
+	NavLabel art.RGB `json:"navLabel"` // inactive section names and brackets' text
 
 	Prompt art.RGB `json:"prompt"` // the search line's [/]
 	Input  art.RGB `json:"input"`  // typed query text
@@ -60,13 +60,28 @@ type Theme struct {
 	Backdrop     float64 `json:"backdrop"` // how much the screen behind an open card is darkened
 }
 
+const (
+	frameRung                     = 0.85
+	tipRung, cornerRung, lineRung = 3, 7, 10
+)
+
+func frameTone(lines art.RGB, k int) art.RGB {
+	v := 255 * math.Pow(frameRung, float64(k))
+	lum := 0.2126*float64(lines[0]) + 0.7152*float64(lines[1]) + 0.0722*float64(lines[2])
+	var tint, grey art.RGB
+	for i := range tint {
+		tint[i] = uint8(min(255, v*float64(lines[i])/lum+0.5))
+		grey[i] = uint8(v + 0.5)
+	}
+	return mix(tint, grey, v/255)
+}
+
 // palette builds a theme from a handful of colours, deriving every token.
-func palette(name string, border, corner, accent, text, dim, warn, good, panel art.RGB) Theme {
-	ink := art.RGB{18, 18, 20}
+func palette(name string, border, accent, text, dim, warn, panel art.RGB) Theme {
 	return Theme{
-		Name: name, Text: text, Dim: dim, Accent: accent, Warn: warn, Good: good,
-		Border: border, Corner: corner, Scrollbar: accent,
-		Brand: accent, NavKey: accent, NavLabel: dim, NavActiveBg: accent, NavActiveFg: ink,
+		Name: name, Text: text, Dim: dim, Accent: accent, Warn: warn,
+		Border: border, Frame: frameTone(border, lineRung), Corner: frameTone(border, cornerRung), CornerTip: frameTone(border, tipRung), Scrollbar: accent,
+		Brand: accent, NavKey: accent, NavLabel: dim,
 		Prompt: accent, Input: text,
 		Selection: accent, Price: text,
 		BodyBg: art.RGB{}, ListSel: mix(art.RGB{}, border, 0.3), ListHead: mix(dim, art.RGB{}, 0.3),
@@ -78,12 +93,13 @@ func palette(name string, border, corner, accent, text, dim, warn, good, panel a
 }
 
 var themes = []Theme{
-	palette("ink", art.RGB{90, 90, 102}, art.RGB{64, 64, 73}, art.RGB{244, 211, 94}, art.RGB{228, 228, 231}, art.RGB{139, 139, 148}, art.RGB{239, 107, 107}, art.RGB{123, 216, 143}, art.RGB{26, 26, 30}),
 	// ink with green instead of yellow, on a darker modal
-	palette("green", art.RGB{90, 90, 102}, art.RGB{64, 64, 73}, art.RGB{120, 255, 150}, art.RGB{228, 228, 231}, art.RGB{139, 139, 148}, art.RGB{239, 107, 107}, art.RGB{120, 255, 150}, art.RGB{17, 17, 20}),
-	palette("zec", art.RGB{120, 98, 52}, art.RGB{84, 70, 40}, art.RGB{244, 183, 40}, art.RGB{240, 232, 214}, art.RGB{160, 146, 118}, art.RGB{239, 107, 107}, art.RGB{150, 214, 120}, art.RGB{30, 26, 20}),
-	palette("phosphor", art.RGB{46, 110, 66}, art.RGB{34, 78, 48}, art.RGB{120, 255, 150}, art.RGB{200, 240, 205}, art.RGB{98, 160, 112}, art.RGB{255, 120, 100}, art.RGB{120, 255, 150}, art.RGB{16, 28, 20}),
-	palette("ice", art.RGB{70, 96, 130}, art.RGB{50, 68, 92}, art.RGB{110, 200, 255}, art.RGB{220, 232, 245}, art.RGB{128, 148, 172}, art.RGB{255, 120, 130}, art.RGB{130, 220, 180}, art.RGB{20, 26, 34}),
+	palette("green", art.RGB{90, 90, 102}, art.RGB{120, 255, 150}, art.RGB{228, 228, 231}, art.RGB{139, 139, 148}, art.RGB{239, 107, 107}, art.RGB{17, 17, 20}),
+	palette("ink", art.RGB{90, 90, 102}, art.RGB{244, 211, 94}, art.RGB{228, 228, 231}, art.RGB{139, 139, 148}, art.RGB{239, 107, 107}, art.RGB{26, 26, 30}),
+	palette("red", art.RGB{90, 90, 102}, art.RGB{255, 83, 83}, art.RGB{228, 228, 231}, art.RGB{139, 139, 148}, art.RGB{239, 107, 107}, art.RGB{17, 17, 20}),
+	palette("zec", art.RGB{120, 98, 52}, art.RGB{244, 183, 40}, art.RGB{240, 232, 214}, art.RGB{160, 146, 118}, art.RGB{239, 107, 107}, art.RGB{30, 26, 20}),
+	palette("phosphor", art.RGB{46, 110, 66}, art.RGB{120, 255, 150}, art.RGB{200, 240, 205}, art.RGB{98, 160, 112}, art.RGB{255, 120, 100}, art.RGB{16, 28, 20}),
+	palette("ice", art.RGB{70, 96, 130}, art.RGB{110, 200, 255}, art.RGB{220, 232, 245}, art.RGB{128, 148, 172}, art.RGB{255, 120, 130}, art.RGB{20, 26, 34}),
 }
 
 const reset = "\x1b[0m"

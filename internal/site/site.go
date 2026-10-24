@@ -22,15 +22,12 @@ type Span struct {
 
 // Manifesto is the site's own statement and the full text it links to.
 type Manifesto struct {
-	Command   string   `json:"command"` // what the prompt types, ./whoami
-	Lead      []Span   `json:"lead"`    // the large first paragraph
-	Body      string   `json:"body"`    // the paragraph under it
-	Title     string   `json:"title"`   // A Cypherpunk's Manifesto
-	Byline    string   `json:"byline"`
+	Lead      []Span   `json:"lead"`  // the large first paragraph
+	Body      string   `json:"body"`  // the paragraph under it
+	Title     string   `json:"title"` // A Cypherpunk's Manifesto
 	Paras     [][]Span `json:"paras"`
 	Signature string   `json:"signature"`
 	Date      string   `json:"date"`
-	Armor     string   `json:"armor"` // the decorative PGP signature block under the text
 }
 
 // Luminary is a figure the site honours, with a zkSNARK-style portrait.
@@ -55,8 +52,6 @@ type Spotlight struct {
 
 // Site is everything baked from zksnarks.net.
 type Site struct {
-	FetchedAt  string      `json:"fetchedAt"`
-	Logo       []string    `json:"logo"` // the site's block-letter wordmark, one string per row
 	Manifesto  Manifesto   `json:"manifesto"`
 	Luminaries []Luminary  `json:"luminaries"`
 	Spotlights []Spotlight `json:"spotlights"`

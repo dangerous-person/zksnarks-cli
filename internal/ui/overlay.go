@@ -8,7 +8,7 @@ import (
 )
 
 // overlay reports whether the card is open over the results.
-func (m *Model) overlay() bool { return m.section == secZilkroad && m.card && !m.help }
+func (m *Model) overlay() bool { return m.section == secZilkroad && m.card }
 
 type rect struct{ x0, y0, x1, y1 int }
 

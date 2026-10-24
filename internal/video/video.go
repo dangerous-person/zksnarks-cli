@@ -25,7 +25,8 @@ const same = 255 // "same as the previous frame"
 // scene is one stream of the file.
 type scene struct {
 	symbols  []string // nil for half-blocks
-	w, h     int      // half-blocks: pixels, the picture is h/2 cells high; symbols: cells
+	fill     int
+	w, h     int // half-blocks: pixels, the picture is h/2 cells high; symbols: cells
 	fps      float64
 	keyEvery int
 	palette  []art.RGB
@@ -87,8 +88,9 @@ func Read(data []byte) (*Video, error) {
 }
 
 func readScene(data []byte) (*scene, []byte, error) {
-	if len(data) < 18 || (string(data[:4]) != "ZKV1" && string(data[:4]) != "ZKC1") {
-		return nil, nil, errors.New("video: not a ZKV1 or ZKC1 stream")
+	magic := string(data[:min(4, len(data))])
+	if len(data) < 18 || (magic != "ZKV1" && magic != "ZKC1" && magic != "ZKC2") {
+		return nil, nil, errors.New("video: not a ZKV1, ZKC1 or ZKC2 stream")
 	}
 	le := binary.LittleEndian
 	s := &scene{
@@ -102,7 +104,7 @@ func readScene(data []byte) (*scene, []byte, error) {
 	if len(data) < head {
 		return nil, nil, errors.New("video: damaged file")
 	}
-	if string(data[:4]) == "ZKC1" {
+	if magic != "ZKV1" {
 		if len(data) <= head {
 			return nil, nil, errors.New("video: damaged file")
 		}
@@ -111,6 +113,12 @@ func readScene(data []byte) (*scene, []byte, error) {
 			s.symbols = append(s.symbols, string(r))
 		}
 		head, n = head+1+l, n*2
+		if magic == "ZKC2" {
+			if len(data) <= head {
+				return nil, nil, errors.New("video: damaged file")
+			}
+			s.fill, head = int(data[head]), head+1
+		}
 	}
 	if s.w == 0 || (s.symbols == nil && s.h%2 != 0) || s.fps <= 0 || s.keyEvery == 0 || count == 0 || len(data) < head+count*n {
 		return nil, nil, errors.New("video: damaged file")
@@ -228,7 +236,6 @@ func (s *scene) drawBlocks(g art.Glyph) []string {
 	return lines
 }
 
-// drawSymbols draws each cell's symbol in its colour on the terminal's own background.
 func (s *scene) drawSymbols() []string {
 	lines := make([]string, s.h)
 	for y := range lines {
@@ -239,11 +246,22 @@ func (s *scene) drawSymbols() []string {
 			if k < len(s.symbols) {
 				sym = s.symbols[k]
 			}
-			w.cell(paint{s.colour(c), true}, paint{}, sym)
+			fg, bg := paint{s.colour(c), true}, paint{}
+			if s.fill > 0 && sym != " " {
+				bg = paint{dim(fg.rgb, s.fill), true}
+			}
+			w.cell(fg, bg, sym)
 		}
 		lines[y] = w.end()
 	}
 	return lines
+}
+
+func dim(c art.RGB, f int) art.RGB {
+	for i := range c {
+		c[i] = byte((int(c[i])*f + 127) / 255)
+	}
+	return c
 }
 
 // paint is a colour, or the terminal's own when unset.

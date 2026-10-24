@@ -58,26 +58,29 @@ func TestShots(t *testing.T) {
 			{"esc esc enter", "card-plain"},
 			{"right right", "card-next"},
 			{"esc v", "list"},
-			{"?", "help"},
 		}},
 		{"small", 80, 24, "", []step{{"", "gallery-80x24"}, {"enter", "card-80x24"}, {"esc v", "list-80x24"}}},
 		{"min", 60, 20, "lineage:skele sort:price", []step{{"", "gallery-60x20"}, {"enter", "card-60x20"}}},
 		{"tiny", 59, 20, "", []step{{"", "too-small"}}},
 		{"default", 160, 48, "", []step{{"", "zilkroad-default"}, {"v", "zilkroad-default-grid"}}},
 		{"modal-160", 160, 48, "", []step{{"sel:63 enter", "modal63"}, {"esc sel:7724 enter", "modal7724"}, {"esc sel:9701 enter", "modal-apparition"}}},
-		{"green-160", 160, 48, "", []step{{"t", "green-gallery"}, {"sel:63 enter", "green-modal63"}}},
+		{"ink-160", 160, 48, "", []step{{"t", "ink-gallery"}, {"sel:63 enter", "ink-modal63"}, {"esc 2", "ink-manifesto"}}},
 		{"sections", 120, 40, "", []step{
-			{"2", "luminaries"},
+			{"2", "manifesto"},
+			{"enter", "archive"},
+			{"pgdown", "archive-page2"},
+			{"esc 3", "luminaries"},
 			{"pgdown", "luminaries-scrolled"},
-			{"3", "network"},
+			{"4", "network"},
 			{"down", "network-2"},
 			{"o", "network-open"},
 		}},
-		{"sections-small", 80, 24, "", []step{{"2", "luminaries"}, {"3", "network"}}},
-		{"sections-min", 60, 20, "", []step{{"2", "luminaries"}, {"3", "network"}}},
-		{"sections-wide", 180, 50, "", []step{{"2", "luminaries"}, {"3", "network"}}},
-		{"luminaries-wide", 250, 64, "", []step{{"2", "luminaries"}, {"G", "luminaries-end"}}},
-		{"luminaries-edge", 220, 60, "", []step{{"2", "luminaries"}}},
+		{"sections-small", 80, 24, "", []step{{"2", "manifesto"}, {"enter", "archive"}, {"esc 3", "luminaries"}, {"4", "network"}}},
+		{"sections-min", 60, 20, "", []step{{"2", "manifesto"}, {"3", "luminaries"}, {"4", "network"}}},
+		{"sections-wide", 180, 50, "", []step{{"2", "manifesto"}, {"3", "luminaries"}, {"4", "network"}}},
+		{"archive-wide", 160, 48, "", []step{{"2 enter", "archive-160x48"}, {"G", "archive-end-160x48"}}},
+		{"luminaries-wide", 250, 64, "", []step{{"3", "luminaries"}, {"G", "luminaries-end"}}},
+		{"luminaries-edge", 220, 60, "", []step{{"3", "luminaries"}}},
 		{"purged", 120, 40, "purged sort:rank", []step{{"", "gallery-purged"}, {"enter", "card-purged"}, {"a", "card-apparition"}}},
 		{"wide", 180, 50, "listed sort:price", []step{{"", "gallery-180x50"}, {"v", "list-180x50"}, {"enter", "card-180x50"}}},
 		{"list-wide", 250, 64, "", []step{{"v sel:49", "list-250x64"}, {"f", "list-filters-250x64"}, {"esc / type:skele type:space type:rim", "list-typing-250x64"}}},
@@ -89,15 +92,43 @@ func TestShots(t *testing.T) {
 			{"H", "prov-closed"},
 			{"right H", "prov-offline"},
 		}},
+		{"root", 160, 48, "", []step{
+			{"0", "root"},
+			{"enter mseek:45", "montage-playing"},
+			{"p", "montage-paused"},
+			{"s", "montage-stopped"},
+			{"enter mseek:76", "montage-gap"},
+			{"x esc", "montage-closed"},
+			{"enter mseek:600 mtick", "montage-ended"},
+		}},
+		{"root-still", 160, 48, "", []step{{"0 ticks:30", "still-30"}, {"ticks:1", "still-31"}, {"ticks:1", "still-32"}, {"ticks:1", "still-33"}, {"ticks:6", "frags-6"}, {"ticks:1", "frags-7"}, {"ticks:1", "frags-8"}, {"ticks:1", "frags-9"}, {"ticks:1", "frags-10"}}},
+		{"root-small", 80, 24, "", []step{{"0", "root-80x24"}, {"enter mseek:45", "montage-80x24"}}},
+		{"root-120", 120, 40, "", []step{{"0", "root-120x40"}, {"enter mseek:100", "montage-crop"}}},
+		{"root-wide", 250, 64, "", []step{{"0", "root-250x64"}, {"enter mseek:45", "montage-250x64"}}},
+		{"root-tiny", 70, 20, "", []step{{"0", "root-too-small"}}},
+		{"shimmer", 120, 40, "", []step{{"0", "shimmer-rest"}, {"shimmer:6", "shimmer-6"}, {"shimmer:11", "shimmer-11"}, {"5", "shimmer-about"}, {"shimmer:11", "shimmer-about-11"}, {"2 shimmer:11", "shimmer-manifesto-11"}}},
+		{"nav", 160, 48, "", []step{{"0", "nav-root"}, {"1", "nav-zilkroad"}, {"3", "nav-luminaries"}, {"t 1", "nav-ink-zilkroad"}, {"5", "nav-ink-contact"}}},
+		{"red", 160, 48, "", []step{{"t t 0", "red-root"}, {"1", "red-gallery"}, {"sel:63 enter", "red-modal63"}, {"esc v", "red-list"}, {"2", "red-manifesto"}, {"5", "red-contact"}}},
+		{"purged", 160, 48, "purged", []step{{"sel:261 enter", "purged-card"}, {"esc v", "purged-list"}, {"v sel:233 enter", "purged-card-233"}}},
+		{"purged-small", 80, 24, "purged", []step{{"sel:261 enter", "purged-card-80x24"}}},
+		{"purged-120", 120, 40, "purged", []step{{"v sel:274", "purged-list-120x40"}}},
+		{"contact", 160, 48, "", []step{{"5", "contact"}, {"space ticks:12", "contact-play12"}, {"ticks:48", "contact-play60"}, {"space", "contact-stopped"}, {"enter", "contact-qr"}, {"c", "contact-copied"}, {"esc", "contact-back"}}},
+		{"contact-120", 120, 40, "", []step{{"5", "contact-120x40"}, {"enter", "contact-qr-120x40"}}},
+		{"contact-small", 80, 24, "", []step{{"5", "contact-80x24"}, {"enter", "contact-qr-80x24"}}},
+		{"contact-tall", 66, 52, "", []step{{"5", "contact-66x52"}}},
+		{"contact-80x44", 80, 44, "", []step{{"5", "contact-80x44"}}},
+		{"contact-80x40", 80, 40, "", []step{{"5", "contact-80x40"}}},
+		{"contact-min", 60, 20, "", []step{{"5", "contact-60x20"}, {"enter", "contact-qr-60x20"}}},
+		{"contact-fit", 60, 34, "", []step{{"5 enter", "contact-qr-60x34"}}},
 		{"bid", 160, 48, "", []step{{"sel:69 enter fakebid", "bid69"}, {"esc sel:9701 enter fakebid", "bid-apparition"}}},
 		{"provenance-small", 80, 24, "", []step{{"sel:161 enter fakehist", "prov-80x24"}, {"H", "prov-full-80x24"}}},
-		{"interview", 160, 48, "", []step{{"3 down", "josh"}, {"w seek:30", "josh-playing"}, {"p", "josh-paused"}, {"s", "josh-stopped"}, {"esc", "josh-closed"}}},
-		{"interview-wide", 180, 50, "", []step{{"3 down", "josh"}, {"w seek:12", "josh-playing"}}},
-		{"interview-tall", 160, 60, "", []step{{"3 down", "josh"}, {"down", "josh-last"}}},
-		{"interview-edge", 140, 47, "", []step{{"3 down", "josh"}, {"w seek:12", "josh-playing"}}},
-		{"interview-small", 120, 40, "", []step{{"3 down", "josh"}, {"w seek:20", "josh-modal"}, {"p", "josh-modal-paused"}}},
-		{"interview-tiny", 80, 24, "", []step{{"3 down", "josh"}, {"w", "josh-too-small"}}},
-		{"network-wide", 250, 64, "", []step{{"3", "network"}, {"down", "network-josh"}, {"w seek:25", "network-playing"}}},
+		{"interview", 160, 48, "", []step{{"4 down", "josh"}, {"w seek:30", "josh-playing"}, {"p", "josh-paused"}, {"s", "josh-stopped"}, {"esc", "josh-closed"}}},
+		{"interview-wide", 180, 50, "", []step{{"4 down", "josh"}, {"w seek:12", "josh-playing"}}},
+		{"interview-tall", 160, 60, "", []step{{"4 down", "josh"}, {"down", "josh-last"}}},
+		{"interview-edge", 140, 47, "", []step{{"4 down", "josh"}, {"w seek:12", "josh-playing"}}},
+		{"interview-small", 120, 40, "", []step{{"4 down", "josh"}, {"w seek:20", "josh-modal"}, {"p", "josh-modal-paused"}}},
+		{"interview-tiny", 80, 24, "", []step{{"4 down", "josh"}, {"w", "josh-too-small"}}},
+		{"network-wide", 250, 64, "", []step{{"4", "network"}, {"down", "network-josh"}, {"w seek:25", "network-playing"}}},
 	}
 	for _, sc := range scenarios {
 		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad", Grid: !strings.HasPrefix(sc.name, "default")}, Media: "../../media"})
@@ -114,6 +145,30 @@ func TestShots(t *testing.T) {
 					if tk, ok := m.selected(); ok {
 						m.histories[tk.ID] = &history{entries: fakeHistory(time.Now())}
 					}
+					continue
+				}
+				if n, ok := strings.CutPrefix(k, "shimmer:"); ok {
+					m.shimmerAt, _ = strconv.Atoi(n)
+					continue
+				}
+				if n, ok := strings.CutPrefix(k, "ticks:"); ok {
+					t, _ := strconv.Atoi(n)
+					for range t {
+						m.onPageTick()
+						m.onStillTick()
+						if m.contactClip != nil {
+							m.onContactTick()
+						}
+					}
+					continue
+				}
+				if k == "mtick" {
+					m.Update(montageTickMsg(m.mont.gen))
+					continue
+				}
+				if sec, ok := strings.CutPrefix(k, "mseek:"); ok {
+					n, _ := strconv.Atoi(sec)
+					m.mont.at, m.mont.base = time.Duration(n)*time.Second, time.Duration(n)*time.Second
 					continue
 				}
 				if sec, ok := strings.CutPrefix(k, "seek:"); ok { // move the interview to a second

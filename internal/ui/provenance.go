@@ -71,7 +71,7 @@ func (m *Model) eventRow(e market.HistoryEntry, w int, now time.Time) line {
 // closes it. (ox, oy) is where the view starts on the screen, for the click target.
 func (m *Model) historyView(t *atlas.Token, w, h, ox, oy int) []line {
 	dim := fg(m.theme.Dim)
-	keyLabel := [3]string{"H", "hide history", "hide"}
+	keyLabel := [3]string{"h", "hide history", "hide"}
 	hist := m.histories[t.ID]
 	var body []line
 	right := ""
@@ -80,7 +80,7 @@ func (m *Model) historyView(t *atlas.Token, w, h, ox, oy int) []line {
 		body = append(body, text(dim, "loading history…"))
 	case hist.err != nil:
 		body = append(body, text(fg(m.theme.Warn), clip("history: "+hist.err.Error(), w)))
-		keyLabel = [3]string{"H", "try again", "retry"}
+		keyLabel = [3]string{"h", "try again", "retry"}
 	default:
 		evs := m.events(t, hist)
 		if len(evs) == 0 {

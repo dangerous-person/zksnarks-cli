@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/site"
@@ -30,11 +29,8 @@ func bakeSite() error {
 		return err
 	}
 	page := string(index)
-	s := &site.Site{FetchedAt: time.Now().UTC().Format(time.RFC3339)}
+	s := &site.Site{}
 
-	if s.Logo, err = logo(page); err != nil {
-		return fmt.Errorf("logo: %w", err)
-	}
 	if s.Manifesto, err = manifesto(page); err != nil {
 		return fmt.Errorf("manifesto: %w", err)
 	}
@@ -270,15 +266,11 @@ var (
 	paraRe  = regexp.MustCompile(`(?s)<p class="para[^"]*"[^>]*>(.*?)</p>`)
 	titleRe = regexp.MustCompile(`<h2>([^<]+)</h2>" \+ '<div class="by">([^<]+)</div>`)
 	whoRe   = regexp.MustCompile(`(?s)<div class="who">(.*?)</div>\s*<div class="date">(.*?)</div>`)
-	armorRe = regexp.MustCompile(`(?s)<div class="armor"[^>]*>(.*?)</div>`)
 )
 
 func manifesto(page string) (site.Manifesto, error) {
 	var m site.Manifesto
 	var err error
-	if m.Command, err = stringAfter(page, `icmd.textContent =`); err != nil {
-		return m, err
-	}
 	lead, err := stringAfter(page, `p1.innerHTML =`)
 	if err != nil {
 		return m, err
@@ -291,7 +283,7 @@ func manifesto(page string) (site.Manifesto, error) {
 	if t == nil {
 		return m, errors.New("title not found")
 	}
-	m.Title, m.Byline = text(t[1]), text(t[2])
+	m.Title = text(t[1])
 	full, err := siteGet("/manifesto.html", "manifesto.html")
 	if err != nil {
 		return m, err
@@ -304,16 +296,6 @@ func manifesto(page string) (site.Manifesto, error) {
 	}
 	if w := whoRe.FindStringSubmatch(string(full)); w != nil {
 		m.Signature, m.Date = text(w[1]), text(w[2])
-	}
-	if a := armorRe.FindStringSubmatch(string(full)); a != nil {
-		lines := strings.Split(html.UnescapeString(tagRe.ReplaceAllString(a[1], "")), "\n")
-		var keep []string
-		for _, l := range lines {
-			if l = strings.TrimSpace(l); l != "" {
-				keep = append(keep, l)
-			}
-		}
-		m.Armor = strings.Join(keep, "\n")
 	}
 	return m, nil
 }
@@ -352,41 +334,6 @@ func luminaries(page string) ([]site.Luminary, error) {
 			return nil, fmt.Errorf("%s: %w", r.Art, err)
 		}
 		out = append(out, site.Luminary{Name: r.Name, Handle: r.Handle, Verified: r.Verified, Cite: r.Cite, Art: a})
-	}
-	return out, nil
-}
-
-var (
-	letterRe = regexp.MustCompile(`const (_[A-Z]) = (\[[^\]]*\]);`)
-	wordRe   = regexp.MustCompile(`const WORD = \[([^\]]*)\];`)
-)
-
-// logo assembles the wordmark the page builds from one array of rows per letter.
-func logo(page string) ([]string, error) {
-	letters := map[string][]string{}
-	for _, m := range letterRe.FindAllStringSubmatch(page, -1) {
-		var rows []string
-		if err := json.Unmarshal([]byte(m[2]), &rows); err != nil {
-			return nil, err
-		}
-		letters[m[1]] = rows
-	}
-	w := wordRe.FindStringSubmatch(page)
-	if w == nil {
-		return nil, errors.New("WORD not found")
-	}
-	var out []string
-	for _, name := range strings.Split(w[1], ",") {
-		rows, ok := letters[strings.TrimSpace(name)]
-		if !ok {
-			return nil, fmt.Errorf("letter %s not found", name)
-		}
-		for i, r := range rows {
-			if i >= len(out) {
-				out = append(out, "")
-			}
-			out[i] += r
-		}
 	}
 	return out, nil
 }
