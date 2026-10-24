@@ -12,6 +12,18 @@ import (
 
 const histPage = 10 // lines a page key scrolls the full history by
 
+func (m *Model) retryHistory() (tea.Cmd, bool) {
+	t, ok := m.selected()
+	if !ok || !m.card || m.histFor != t.ID {
+		return nil, false
+	}
+	if h := m.histories[t.ID]; h == nil || h.err == nil {
+		return nil, false
+	}
+	m.histTop = 0
+	return m.loadHistory(), true
+}
+
 // toggleHistory opens the selected token's full history in the card, loading it first if
 // needed, or closes it again; while the history failed to load it tries again instead.
 func (m *Model) toggleHistory() tea.Cmd {
@@ -66,12 +78,9 @@ func (m *Model) eventRow(e market.HistoryEntry, w int, now time.Time) line {
 	return r.line()
 }
 
-// historyView is the token's full history, in place of its details: the heading, a gap, as
-// many entries as fit in h lines (only they scroll, by histTop), a gap and the key that
-// closes it. (ox, oy) is where the view starts on the screen, for the click target.
 func (m *Model) historyView(t *atlas.Token, w, h, ox, oy int) []line {
 	dim := fg(m.theme.Dim)
-	keyLabel := [3]string{"h", "hide history", "hide"}
+	var keyLabel [3]string
 	hist := m.histories[t.ID]
 	var body []line
 	right := ""
@@ -80,7 +89,7 @@ func (m *Model) historyView(t *atlas.Token, w, h, ox, oy int) []line {
 		body = append(body, text(dim, "loading history…"))
 	case hist.err != nil:
 		body = append(body, text(fg(m.theme.Warn), clip("history: "+hist.err.Error(), w)))
-		keyLabel = [3]string{"h", "try again", "retry"}
+		keyLabel = [3]string{"r", "try again", "retry"}
 	default:
 		evs := m.events(t, hist)
 		if len(evs) == 0 {
@@ -95,7 +104,7 @@ func (m *Model) historyView(t *atlas.Token, w, h, ox, oy int) []line {
 		if len(hist.entries) >= market.HistoryCap {
 			all = append(all, line{}, text(dim, clip("The server sends only the first "+itoa(market.HistoryCap)+" entries.", w)))
 		}
-		rows := max(1, h-4) // the heading, two gaps and the key
+		rows := max(1, h-2)
 		m.histTop = max(0, min(m.histTop, len(all)-rows))
 		body = all[m.histTop:min(len(all), m.histTop+rows)]
 		right = plural(len(evs), "event")
@@ -105,6 +114,9 @@ func (m *Model) historyView(t *atlas.Token, w, h, ox, oy int) []line {
 	}
 	out := []line{leftRight(bold(m.theme.Text), "PROVENANCE_", dim, right, w), {}}
 	out = append(out, body...)
+	if keyLabel[0] == "" {
+		return out
+	}
 	for len(out) < h-1 {
 		out = append(out, line{})
 	}

@@ -56,10 +56,11 @@ func (m *Model) separator() string {
 // queryLine is the search box with the result count; it also returns the cursor column.
 func (m *Model) queryLine() (line, int) {
 	w := m.innerW()
-	right := comma(len(m.results)) + " of " + comma(m.supplyShown()) + " · " + sortLabel(m.q.Sort)
-	rStyle := fg(m.theme.Dim)
+	count, rest := comma(len(m.results)), " of "+comma(m.supplyShown())+" · "+sortLabel(m.q.Sort)
+	right := count + rest
 	if len(m.q.Errs) > 0 {
-		right, rStyle = m.q.Errs[0], fg(m.theme.Warn)
+		count, rest = "", clip(m.q.Errs[0], w/2)
+		right = rest
 	}
 	right = clip(right, w/2)
 	var r row
@@ -75,7 +76,7 @@ func (m *Model) queryLine() (line, int) {
 	cursor := 2 + r.w
 	switch {
 	case m.input.text == "" && m.focus != focusQuery:
-		r.put(fg(m.theme.Dim), clip("skele · rim cobalt · #7724 · price<1 · sort:rank", avail))
+		r.put(fg(m.theme.MarketLabel), clip("skele · rim cobalt · #7724 · price<1 · sort:rank", avail))
 	default:
 		runes := m.input.r
 		start := 0
@@ -86,8 +87,23 @@ func (m *Model) queryLine() (line, int) {
 		r.put(fg(m.theme.Input), string(vis))
 		cursor += m.input.pos - start
 	}
+	m.clearKey = rect{}
+	if clear := m.hints("esc", "clear"); m.focus == focusMain && !m.card && m.input.text != "" && r.w+2+clear.w <= w-width(right)-2 {
+		r.space(2)
+		x := 2 + r.w
+		r.cells(clear.s, clear.w)
+		m.clearKey = rect{x, 3, x + clear.w, 4}
+	}
 	r.padTo(w - width(right))
-	r.put(rStyle, right)
+	switch {
+	case count == "":
+		r.put(fg(m.theme.Warn), right)
+	case width(right) < width(count+rest):
+		r.put(fg(m.theme.MarketLabel), right)
+	default:
+		r.put(fg(m.theme.Market), count)
+		r.put(fg(m.theme.MarketLabel), rest)
+	}
 	return r.line(), cursor
 }
 
@@ -162,8 +178,9 @@ func (m *Model) suggestionBox() []line {
 	}
 	var r row
 	r.put(b, "  ╰─ ")
-	r.put(fg(m.theme.Accent), "[tab]")
-	r.put(fg(m.theme.Dim), " complete ")
+	tab := m.hints("tab", "complete")
+	r.cells(tab.s, tab.w)
+	r.space(1)
 	r.put(b, strings.Repeat("─", w-r.w+1)+"╯")
 	out = append(out, r.line())
 	return out

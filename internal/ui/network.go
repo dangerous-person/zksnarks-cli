@@ -226,7 +226,7 @@ func (m *Model) spotWords(i int, s site.Spotlight, tw int) ([]line, []keyRect) {
 	out := []line{text(fg(m.theme.Text), clip(s.Name, tw)), text(dim, clip("@"+s.Handle, tw))}
 	meta := "zkSNARK #" + itoa(s.Snark)
 	if s.Runtime != "" {
-		meta += " · interview " + s.Runtime
+		meta += " · spotlight " + s.Runtime
 	}
 	out = append(out, text(dim, clip(meta, tw)), line{})
 	for _, ln := range wrap(plain("“"+s.Quote+"”"), tw) {
@@ -244,7 +244,7 @@ func (m *Model) spotWords(i int, s site.Spotlight, tw int) ([]line, []keyRect) {
 	if i != m.spot || m.interviewOf(i) == nil {
 		return append(out, line{}), nil
 	}
-	l := m.hints("enter", "watch")
+	l := m.pageKey("enter", "play")
 	return append(out, l), []keyRect{{rect{0, len(out), l.w, len(out) + 1}, "w"}}
 }
 
@@ -284,10 +284,12 @@ func (m *Model) drawPlayer(cv *canvas) {
 		}
 		cw = max(1, min(48, areaW-modalChromeW))
 		content = []line{text(bold(m.theme.Text), "MAKE THE WINDOW BIGGER_"), {}}
-		for _, ln := range wrap(plain("the interview needs "+itoa(needW)+" x "+itoa(needH)+", the window is "+itoa(m.w)+" x "+itoa(m.h)), cw) {
-			var r row
-			spanLine(&r, ln, fg(m.theme.Dim), "", 1<<30)
-			content = append(content, r.line())
+		for _, s := range []string{"The spotlight needs " + itoa(needW) + " x " + itoa(needH) + ".", "This window is " + itoa(m.w) + " x " + itoa(m.h) + "."} {
+			for _, ln := range wrap(plain(s), cw) {
+				var r row
+				spanLine(&r, ln, fg(m.theme.Dim), "", 1<<30)
+				content = append(content, r.line())
+			}
 		}
 	}
 	boxW, boxH := modalChromeW+cw, modalChromeH+len(content)

@@ -24,7 +24,6 @@ type panel struct {
 	open   bool
 	cursor int
 	scroll int
-	find   input
 	rows   []prow
 }
 
@@ -39,23 +38,14 @@ func (m *Model) openPanel() {
 
 func (p *panel) build(m *Model) {
 	p.rows = p.rows[:0]
-	find := strings.ToLower(strings.TrimSpace(p.find.text))
-	if find == "" {
-		p.rows = append(p.rows, prow{heading: "STATUS"})
-		for _, s := range statusRows {
-			p.rows = append(p.rows, prow{status: s})
-		}
+	p.rows = append(p.rows, prow{heading: "STATUS"})
+	for _, s := range statusRows {
+		p.rows = append(p.rows, prow{status: s})
 	}
 	for k := 0; k < 5; k++ {
-		var vals []prow
+		p.rows = append(p.rows, prow{heading: strings.ToUpper(atlas.TraitNames[k])})
 		for _, v := range m.ix.Cat.Values[k] {
-			if find == "" || strings.Contains(strings.ToLower(v), find) {
-				vals = append(vals, prow{key: k, value: v})
-			}
-		}
-		if len(vals) > 0 {
-			p.rows = append(p.rows, prow{heading: strings.ToUpper(atlas.TraitNames[k])})
-			p.rows = append(p.rows, vals...)
+			p.rows = append(p.rows, prow{key: k, value: v})
 		}
 	}
 	p.cursor = min(p.cursor, len(p.rows)-1)
@@ -75,7 +65,7 @@ func (p *panel) skipHeading(m *Model, dir int) {
 	p.clamp(m)
 }
 
-func (p *panel) listH(m *Model) int { return max(1, m.bodyH()-4) }
+func (p *panel) listH(m *Model) int { return max(1, m.bodyH()-3) }
 
 func (p *panel) clamp(m *Model) {
 	h := p.listH(m)
@@ -91,15 +81,10 @@ func (p *panel) clamp(m *Model) {
 	p.scroll = max(0, min(p.scroll, len(p.rows)-h))
 }
 
-func (m *Model) panelKey(msg tea.KeyPressMsg, k string) tea.Cmd {
+func (m *Model) panelKey(k string) tea.Cmd {
 	p := &m.panel
 	switch k {
 	case "esc":
-		if p.find.text != "" {
-			p.find.set("")
-			p.build(m)
-			return nil
-		}
 		p.open = false
 		m.focus = focusMain
 		m.ensureVisible()
@@ -123,13 +108,10 @@ func (m *Model) panelKey(msg tea.KeyPressMsg, k string) tea.Cmd {
 		p.skipHeading(m, -1)
 	case "space", "enter":
 		m.toggleRow(p.cursor)
+	case "/":
+		m.focusQuery()
 	case "ctrl+c":
 		return tea.Quit
-	default:
-		if p.find.key(msg) {
-			p.cursor = 0
-			p.build(m)
-		}
 	}
 	return nil
 }
@@ -160,8 +142,8 @@ func (p *panel) wheel(m *Model, b tea.MouseButton) {
 }
 
 func (p *panel) click(m *Model, y int) {
-	i := p.scroll + y - 2
-	if y < 2 || i >= len(p.rows) || p.rows[i].heading != "" {
+	i := p.scroll + y - 1
+	if y < 1 || i >= len(p.rows) || p.rows[i].heading != "" {
 		return
 	}
 	p.cursor = i
@@ -177,7 +159,6 @@ func (m *Model) ensureFacets() {
 	}
 }
 
-// lines draws the panel: its find box, the rows and a detail line for the cursor row.
 func (p *panel) lines(m *Model, h int) []line {
 	m.ensureFacets()
 	b := fg(m.theme.Border)
@@ -191,17 +172,6 @@ func (p *panel) lines(m *Model, h int) []line {
 	top.put(bold(m.theme.Text), "filters")
 	top.put(b, " "+strings.Repeat("─", panelW-top.w-2)+"╮")
 	out = append(out, top.line())
-	var find row
-	find.put(b, "│")
-	if p.find.text == "" {
-		find.put(fg(m.theme.Dim), " type to find a value")
-	} else {
-		find.put(fg(m.theme.Accent), " / ")
-		find.put(fg(m.theme.Text), clip(p.find.text, inner-4))
-	}
-	find.padTo(panelW - 1)
-	find.put(b, "│")
-	out = append(out, find.line())
 	listH := p.listH(m)
 	for y := 0; y < listH; y++ {
 		var r row

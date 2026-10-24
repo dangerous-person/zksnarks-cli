@@ -507,6 +507,12 @@ func (m *Model) onPageTick() tea.Cmd {
 		m.drips(&m.lumDrips, luminaryHeading, 11).step()
 	case secNetwork:
 		m.drips(&m.netDrips, networkHeading, 12).step()
+	case secZilkroad:
+		if len(m.results) > 0 {
+			m.ticking = false
+			return nil
+		}
+		m.shedding().step()
 	default:
 		m.ticking = false
 		return nil

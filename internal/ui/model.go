@@ -142,6 +142,9 @@ type Model struct {
 	contactPlaying  bool
 	contactFrame    int
 	contactPic      rect
+	clearKey        rect
+	helpOpen        bool
+	helpTop         int
 
 	shimmerTicking bool
 	shimmerAt      int
@@ -200,7 +203,7 @@ func (m *Model) Init() tea.Cmd {
 	case secLuminaries, secNetwork:
 		cmds = append(cmds, m.startPageTick())
 	}
-	cmds = append(cmds, m.startShimmer())
+	cmds = append(cmds, m.startShimmer(), m.emptyTick())
 	if m.online() {
 		cmds = append(cmds, m.fetchSnapshot(), m.fetchStats(), m.fetchRate(), tickEvents(), tickSnapshot(), tickRate(), m.fetchTrack())
 	}
@@ -303,12 +306,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.panel.clamp(m)
 		return m, nil
 	case tea.KeyPressMsg:
-		return m, m.key(msg)
+		return m, tea.Batch(m.key(msg), m.emptyTick())
 	case tea.MouseWheelMsg:
 		m.wheel(msg.Mouse())
 		return m, nil
 	case tea.MouseClickMsg:
-		return m, m.click(msg.Mouse())
+		return m, tea.Batch(m.click(msg.Mouse()), m.emptyTick())
 	case pageTickMsg:
 		return m, m.onPageTick()
 	case watchTickMsg:
@@ -357,7 +360,10 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.queryKey(msg, k)
 	}
 	if m.focus == focusFilters {
-		return m.panelKey(msg, k)
+		return m.panelKey(k)
+	}
+	if m.helpShown() {
+		return m.helpKey(k)
 	}
 	switch k {
 	case "q":
@@ -366,6 +372,9 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		m.cycleTheme()
 		return nil
 	case "r":
+		if cmd, ok := m.retryHistory(); ok {
+			return cmd
+		}
 		return m.refreshMarket()
 	case "0", "1", "2", "3", "4", "5":
 		return m.setSection(int(k[0] - '0'))
@@ -392,6 +401,8 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.cardKey(k)
 	}
 	switch k {
+	case "?":
+		m.helpOpen, m.helpTop = true, 0
 	case "f":
 		m.openPanel()
 	case "z", "a", "H", "shift+h":
@@ -450,6 +461,7 @@ func (m *Model) setSection(s int) tea.Cmd {
 	m.closePlayer()
 	m.closeMontage()
 	m.contactOpen, m.contactCopied = false, false
+	m.helpOpen = false
 	shimmer := m.startShimmer()
 	switch {
 	case s == secZilkroad:
@@ -480,6 +492,12 @@ func (m *Model) cycleTheme() {
 
 func (m *Model) queryKey(msg tea.KeyPressMsg, k string) tea.Cmd {
 	switch k {
+	case "?":
+		m.focus = focusMain
+		m.sugg = nil
+		m.input.set(strings.TrimSpace(m.input.text))
+		m.helpOpen, m.helpTop = true, 0
+		return nil
 	case "enter":
 		if m.suggSel >= 0 && m.suggSel < len(m.sugg) && m.sugg[m.suggSel].Jump != 0 {
 			return m.jump(m.sugg[m.suggSel].Jump)
@@ -657,6 +675,14 @@ func (m *Model) keepSelectionInView() {
 }
 
 func (m *Model) wheel(ms tea.Mouse) {
+	if m.helpShown() {
+		if ms.Button == tea.MouseWheelUp {
+			m.helpTop--
+		} else if ms.Button == tea.MouseWheelDown {
+			m.helpTop++
+		}
+		return
+	}
 	switch m.section {
 	case secManifesto:
 		if m.reading {
@@ -743,6 +769,12 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 	if m.section != secZilkroad {
 		return nil
 	}
+	if m.helpShown() {
+		if !m.box.contains(ms.X, ms.Y) {
+			m.helpOpen = false
+		}
+		return nil
+	}
 	if m.overlay() {
 		if !m.box.contains(ms.X, ms.Y) {
 			m.card = false // a click outside the card closes it
@@ -751,6 +783,11 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 		return m.clickKey(ms)
 	}
 	if ms.Y == 3 && !m.card {
+		if m.clearKey.contains(ms.X, ms.Y) {
+			m.input.set("")
+			m.refresh(true)
+			return nil
+		}
 		m.focusQuery()
 		return nil
 	}

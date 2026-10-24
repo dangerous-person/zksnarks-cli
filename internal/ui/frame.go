@@ -67,14 +67,17 @@ func (m *Model) View() tea.View {
 		return v
 	}
 	out, cursorX := m.frameLines()
-	if m.overlay() || m.playerOpen() {
+	if m.overlay() || m.playerOpen() || m.helpShown() {
 		cv := newCanvas(m.w, m.h)
 		for y, l := range out {
 			cv.draw(0, y, l)
 		}
-		if m.overlay() {
+		switch {
+		case m.helpShown():
+			m.drawHelp(cv)
+		case m.overlay():
 			m.drawCard(cv)
-		} else {
+		default:
 			m.drawPlayer(cv)
 		}
 		v.Content = cv.String()
@@ -318,14 +321,16 @@ func (m *Model) footerHints() []line {
 	switch {
 	case m.focus == focusQuery:
 		return []line{m.hints("enter", "done", "tab", "complete", "↑↓", "pick", "esc", "cancel"), m.hints("enter", "done", "tab", "complete", "esc", "cancel")}
+	case m.helpShown():
+		return []line{m.hints("/", "search", "esc", "close")}
 	case m.focus == focusFilters:
-		return []line{m.hints("space", "toggle", "type", "find a value", "esc", "close"), m.hints("space", "toggle", "esc", "close")}
+		return []line{m.hints("space", "toggle", "esc", "close")}
 	case m.section == secRoot && m.mont.open:
 		return []line{m.montageKeys()}
 	case m.section == secRoot:
 		var watch []string
 		if m.hasMontage() {
-			watch = []string{"enter", "watch"}
+			watch = []string{"enter", "play"}
 		}
 		return []line{m.hints(watch...)}
 	case m.section == secManifesto && m.reading:
@@ -342,7 +347,7 @@ func (m *Model) footerHints() []line {
 		if s, ok := m.spotlight(); ok {
 			var watch []string
 			if m.interviewOf(m.spot) != nil {
-				watch = []string{"enter", "watch"}
+				watch = []string{"enter", "play"}
 			}
 			return []line{
 				m.hints(append(watch, "↑↓", "pick", "o", "open #"+itoa(s.Snark), "a", "apply")...),
@@ -357,7 +362,7 @@ func (m *Model) footerHints() []line {
 		other = "grid"
 	}
 	return []line{
-		m.hints("enter", "open", "f", "filters", "v", other),
-		m.hints("f", "filters"),
+		m.hints("enter", "open", "f", "filters", "v", other, "?", "help"),
+		m.hints("f", "filters", "?", "help"),
 	}
 }

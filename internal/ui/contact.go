@@ -235,7 +235,8 @@ func (m *Model) contactQRLines(w, h int) []line {
 		}
 		lines := []line{
 			text(bold(m.theme.Text), "MAKE THE WINDOW BIGGER_"), {},
-			text(dim, clip("the QR code needs "+itoa(needW)+" x "+itoa(needH)+", the window is "+itoa(m.w)+" x "+itoa(m.h), w)),
+			text(dim, clip("The QR code needs "+itoa(needW)+" x "+itoa(needH)+".", w)),
+			text(dim, clip("This window is "+itoa(m.w)+" x "+itoa(m.h)+".", w)),
 			{}, text(dim, addr),
 		}
 		for i := range lines {

@@ -45,6 +45,9 @@ func (m *Model) cardKey(k string) tea.Cmd {
 		}
 	case "h", "H", "shift+h":
 		return m.toggleHistory()
+	case "r":
+		cmd, _ := m.retryHistory()
+		return cmd
 	case "z", "o":
 		if t, ok := m.selected(); ok {
 			return openURL(zilkroadURL(t.ID))

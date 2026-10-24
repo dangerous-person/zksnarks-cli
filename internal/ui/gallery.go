@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas"
 )
@@ -19,7 +21,7 @@ func (m *Model) galleryLines(w, h int) []line {
 	cols := m.cols()
 	gridW := cols*slotW + (cols-1)*slotGap
 	padL := max(0, (w-gridW)/2)
-	accent := fg(m.theme.Selection)
+	accent := fg(art.RGB{255, 255, 255})
 	total := m.contentH()
 	for y := 0; y < h; y++ {
 		ln := m.scroll + y
@@ -82,26 +84,38 @@ func (m *Model) label(t *atlas.Token, sel bool, w int) line {
 	return leftRight(idStyle, "#"+itoa(t.ID), pStyle, price, w)
 }
 
+func (m *Model) emptyTick() tea.Cmd {
+	if m.section != secZilkroad || len(m.results) > 0 {
+		return nil
+	}
+	return m.startPageTick()
+}
+
 func (m *Model) emptyLines(w, h int) []line {
-	out := make([]line, h)
-	msg := "no tokens match"
+	msg, style := "Nothing matches.", fg(m.theme.Dim)
 	if len(m.q.Errs) > 0 {
-		msg = m.q.Errs[0]
+		msg, style = m.q.Errs[0], fg(m.theme.Warn)
 	}
-	y := min(h-1, 3)
-	pad := max(0, (w-width(msg))/2)
-	var r row
-	r.space(pad)
-	r.put(fg(m.theme.Dim), clip(msg, w))
-	out[y] = r.line()
-	if y+2 < h {
-		hint := "esc clears the query"
-		var r2 row
-		r2.space(max(0, (w-width(hint))/2))
-		r2.put(fg(m.theme.Dim), hint)
-		out[y+2] = r2.line()
+	esc := "to clear or"
+	if m.focus == focusQuery {
+		esc = "to cancel or"
 	}
-	return out
+	var keys row
+	k := m.pageKey("esc", esc)
+	keys.cells(k.s, k.w)
+	keys.space(1)
+	k = m.pageKey("?", "for help")
+	keys.cells(k.s, k.w)
+	var block []line
+	if h >= art.ThumbH+5 {
+		figure, _ := m.shedding().art(mix(m.theme.Dim, m.theme.BodyBg, 0.5))
+		for _, l := range art.Thumb(figure, m.opts.Glyph) {
+			block = append(block, centreIn(line{l, art.ThumbW}, w))
+		}
+		block = append(block, line{})
+	}
+	block = append(block, centreIn(text(style, clip(msg, w)), w), line{}, centreIn(keys.line(), w))
+	return centre(block, 0, w, h)
 }
 
 // swatch is the most common non-black colour of a token, for the list view.

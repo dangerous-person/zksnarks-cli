@@ -88,12 +88,16 @@ func (m *Model) modalBox(cv *canvas, b rect, titleText string, nav func(w int) l
 // cardNav is the card's navigation for the bottom of its frame; the card's other keys are
 // on the card itself.
 func (m *Model) cardNav(t *atlas.Token, w int) line {
-	pairs := []string{"←→", "prev/next", "esc", "back"}
+	esc := "close"
+	if m.histFor == t.ID {
+		esc = "back"
+	}
+	pairs := []string{"←→", "prev/next", "esc", esc}
 	if h := m.histories[t.ID]; m.histFor == t.ID && h != nil && !h.loading && h.err == nil {
 		pairs = append([]string{"↑↓", "scroll"}, pairs...)
 	}
 	if l := m.hints(pairs...); l.w <= w {
 		return l
 	}
-	return m.hints("←→", "next", "esc", "back")
+	return m.hints("←→", "next", "esc", esc)
 }

@@ -275,7 +275,7 @@ func manifesto(page string) (site.Manifesto, error) {
 	if err != nil {
 		return m, err
 	}
-	m.Lead = spans(lead)
+	m.Lead = spans(strings.ReplaceAll(lead, "zkSNARKS", "zkSNARKs"))
 	if m.Body, err = stringAfter(page, `const P2 =`); err != nil {
 		return m, err
 	}

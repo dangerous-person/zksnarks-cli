@@ -108,19 +108,19 @@ func (m *Model) rootIntroLines() []line {
 	return append(out, line{})
 }
 
-var watchKeyWhite = art.RGB{0xff, 0xff, 0xff}
-
-const watchLabelLift = 0.2
-
-func (m *Model) watchLine() line { return m.pageKey("enter", "watch") }
+func (m *Model) watchLine() line { return m.pageKey("enter", "play") }
 
 func (m *Model) pageKey(key, label string) line {
-	grey := mix(m.theme.HintLabel, watchKeyWhite, watchLabelLift)
 	var r row
-	r.put(fg(m.theme.HintBracket), "[")
-	m.shimmerKey(&r, key, grey, watchKeyWhite)
-	r.put(fg(m.theme.HintBracket), "]")
-	r.put(fg(grey), " "+strings.ToUpper(label))
+	if key == "enter" {
+		r.put(fg(m.theme.HintBracket), "[")
+		m.shimmerKey(&r, key, art.RGB{255, 255, 255}, m.theme.HintKey)
+		r.put(fg(m.theme.HintBracket), "]")
+	} else {
+		m.keyHint(&r, key)
+	}
+	r.space(1)
+	r.put(fg(m.theme.HintLabel), strings.ToUpper(label))
 	return r.line()
 }
 
@@ -133,9 +133,7 @@ const (
 
 type shimmerTickMsg struct{}
 
-func (m *Model) shimmers() bool {
-	return m.section == secRoot || m.section == secManifesto || m.section == secAbout
-}
+func (m *Model) shimmers() bool { return true }
 
 func (m *Model) startShimmer() tea.Cmd {
 	if m.shimmerTicking || !m.shimmers() {
@@ -456,7 +454,8 @@ func (m *Model) rootTooSmall(w, h int) []line {
 	lines := []line{
 		text(bold(m.theme.Text), "MAKE THE WINDOW BIGGER_"),
 		{},
-		text(fg(m.theme.Dim), clip("the front page needs "+itoa(logoW+m.w-w)+" x "+itoa(m.rootMinH()+m.h-h)+", the window is "+itoa(m.w)+" x "+itoa(m.h), w)),
+		text(fg(m.theme.Dim), clip("The front page needs "+itoa(logoW+m.w-w)+" x "+itoa(m.rootMinH()+m.h-h)+".", w)),
+		text(fg(m.theme.Dim), clip("This window is "+itoa(m.w)+" x "+itoa(m.h)+".", w)),
 	}
 	for i := range lines {
 		lines[i] = centreIn(lines[i], w)
