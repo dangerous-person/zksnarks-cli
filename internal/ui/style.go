@@ -103,6 +103,8 @@ var themes = []Theme{
 	palette("ice", art.RGB{70, 96, 130}, art.RGB{110, 200, 255}, art.RGB{220, 232, 245}, art.RGB{128, 148, 172}, art.RGB{255, 120, 130}, art.RGB{244, 211, 94}, art.RGB{20, 26, 34}),
 }
 
+var plainTheme = palette("plain", art.RGB{88, 88, 88}, art.RGB{238, 238, 238}, art.RGB{208, 208, 208}, art.RGB{138, 138, 138}, art.RGB{208, 208, 208}, art.RGB{208, 208, 208}, art.RGB{18, 18, 18})
+
 const reset = "\x1b[0m"
 
 func fg(c art.RGB) string {

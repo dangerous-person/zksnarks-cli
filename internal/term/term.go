@@ -1,5 +1,6 @@
-// Package term decides how to draw for the terminal the app runs in: the colour profile and
-// the glyph used to split a cell between two art pixels.
+// Package term decides how to draw for the terminal the app runs in: the colour profile, the
+// palette indices for terminals without truecolor, and the glyph used to split a cell
+// between two art pixels.
 package term
 
 import (
@@ -23,26 +24,50 @@ func Color(flag string, env Env) colorprofile.Profile {
 	case "256":
 		return colorprofile.ANSI256
 	}
-	if env("NO_COLOR") != "" {
-		return colorprofile.ASCII
+	if strings.HasPrefix(env("TERM"), "screen") && env("TMUX") == "" {
+		return colorprofile.ANSI256
 	}
-	switch strings.ToLower(env("COLORTERM")) {
-	case "truecolor", "24bit":
-		return colorprofile.TrueColor
-	}
-	switch env("TERM_PROGRAM") {
-	case "ghostty", "iTerm.app", "WezTerm", "vscode", "Hyper", "rio", "Tabby", "WarpTerminal":
-		return colorprofile.TrueColor
-	case "Apple_Terminal":
-		if appleTerminalTrueColor() {
-			return colorprofile.TrueColor
-		}
-	}
-	t := env("TERM")
-	if strings.Contains(t, "kitty") || strings.Contains(t, "ghostty") || strings.Contains(t, "direct") || strings.Contains(t, "alacritty") {
+	if trueColor(env) {
 		return colorprofile.TrueColor
 	}
 	return colorprofile.ANSI256
+}
+
+func trueColor(env Env) bool {
+	switch strings.ToLower(env("COLORTERM")) {
+	case "truecolor", "24bit":
+		return true
+	}
+	if env("WT_SESSION") != "" || env("TERMINAL_EMULATOR") == "JetBrains-JediTerm" || env("LC_TERMINAL") == "iTerm2" || otherTerminal(env) {
+		return true
+	}
+	switch program(env) {
+	case "ghostty", "iTerm.app", "WezTerm", "vscode", "Hyper", "rio", "Tabby", "WarpTerminal":
+		return true
+	case "Apple_Terminal":
+		if appleTerminalTrueColor() {
+			return true
+		}
+	}
+	t := env("TERM")
+	return strings.Contains(t, "kitty") || strings.Contains(t, "ghostty") || strings.Contains(t, "direct") || strings.Contains(t, "alacritty")
+}
+
+func otherTerminal(env Env) bool {
+	for _, k := range []string{"KITTY_WINDOW_ID", "ALACRITTY_WINDOW_ID", "WEZTERM_EXECUTABLE", "GHOSTTY_RESOURCES_DIR"} {
+		if env(k) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func program(env Env) string {
+	p := env("TERM_PROGRAM")
+	if p == "Apple_Terminal" && otherTerminal(env) {
+		return ""
+	}
+	return p
 }
 
 // Glyph returns the cell-splitting glyph. Terminal.app takes block glyphs from the font, and
@@ -55,7 +80,7 @@ func Glyph(flag string, env Env) art.Glyph {
 	case "five-eighths":
 		return art.LowerFiveEighths
 	}
-	if env("TERM_PROGRAM") == "Apple_Terminal" {
+	if program(env) == "Apple_Terminal" {
 		return art.LowerFiveEighths
 	}
 	return art.UpperHalf

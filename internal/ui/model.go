@@ -8,12 +8,14 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas"
 	"github.com/dangerous-person/zksnarks-cli/internal/market"
 	"github.com/dangerous-person/zksnarks-cli/internal/search"
 	"github.com/dangerous-person/zksnarks-cli/internal/site"
+	"github.com/dangerous-person/zksnarks-cli/internal/term"
 	"github.com/dangerous-person/zksnarks-cli/internal/video"
 )
 
@@ -50,12 +52,14 @@ type State struct {
 
 // Options configure a Model.
 type Options struct {
-	Atlas  *atlas.Atlas
-	Site   *site.Site
-	Glyph  art.Glyph
-	Client *market.Client
-	State  State
-	Media  fs.FS // the interviews, the trailer and the stills; nil for none
+	Atlas   *atlas.Atlas
+	Site    *site.Site
+	Glyph   art.Glyph
+	Color   colorprofile.Profile
+	NoColor bool
+	Client  *market.Client
+	State   State
+	Media   fs.FS // the interviews, the trailer and the stills; nil for none
 }
 
 type history struct {
@@ -71,6 +75,7 @@ type Model struct {
 	byID   map[int]int
 	ix     *search.Index
 	theme  Theme
+	quant  *term.Quantiser
 
 	w, h    int
 	section int
@@ -168,6 +173,7 @@ func New(o Options) *Model {
 		artChanged: map[int]bool{},
 		interviews: map[int]*interview{},
 		theme:      themes[0],
+		quant:      term.NewQuantiser(o.Color),
 		shimmerAt:  -1,
 		suggSel:    -1,
 	}
@@ -179,6 +185,9 @@ func New(o Options) *Model {
 		if t.Name == o.State.Theme {
 			m.theme = t
 		}
+	}
+	if o.NoColor {
+		m.theme = plainTheme
 	}
 	if !o.State.Grid {
 		m.mode = modeList
@@ -197,7 +206,11 @@ func New(o Options) *Model {
 
 // SavedState returns what to remember for the next run.
 func (m *Model) SavedState() State {
-	return State{Query: m.input.text, Grid: m.mode == modeGallery, Theme: m.theme.Name, Section: sectionNames[m.section]}
+	theme := m.theme.Name
+	if m.opts.NoColor {
+		theme = m.opts.State.Theme
+	}
+	return State{Query: m.input.text, Grid: m.mode == modeGallery, Theme: theme, Section: sectionNames[m.section]}
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -370,7 +383,9 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "q":
 		return tea.Quit
 	case "t":
-		m.cycleTheme()
+		if !m.opts.NoColor {
+			m.cycleTheme()
+		}
 		return nil
 	case "r", "R":
 		if cmd, ok := m.retryHistory(); ok {

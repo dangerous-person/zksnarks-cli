@@ -53,8 +53,14 @@ func (m *Model) footRows() int {
 	return 2
 }
 
-// View draws the screen; every line is exactly m.w cells wide.
 func (m *Model) View() tea.View {
+	v := m.view()
+	v.Content = m.quant.Apply(v.Content)
+	return v
+}
+
+// view draws the screen; every line is exactly m.w cells wide.
+func (m *Model) view() tea.View {
 	v := tea.NewView("")
 	v.AltScreen = true
 	v.ReportFocus = true
@@ -282,10 +288,13 @@ func (m *Model) tildes(parts []line, n int) line {
 	return r.line()
 }
 
-// hintsRow is the line under the box: key hints on the left, the theme key (or the network
-// status, when the market strip is hidden) on the right.
+// hintsRow is the line under the box: key hints on the left, the theme key unless NO_COLOR
+// is set (or the network status, when the market strip is hidden) on the right.
 func (m *Model) hintsRow() string {
-	rights := []line{m.hints("t", "theme")}
+	var rights []line
+	if !m.opts.NoColor {
+		rights = []line{m.hints("t", "theme")}
+	}
 	if !m.showMarket() {
 		rights = m.statusLines()
 	}

@@ -76,7 +76,7 @@ func main() {
 	if *query != "" {
 		st.Query = *query
 	}
-	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Client: market.New(*offline), State: st, Media: files})
+	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Color: profile, NoColor: os.Getenv("NO_COLOR") != "", Client: market.New(*offline), State: st, Media: files})
 	final, err := tea.NewProgram(m, tea.WithColorProfile(profile)).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
@@ -96,6 +96,7 @@ func printTokens(args []string, profile colorprofile.Profile, glyph art.Glyph) e
 		return err
 	}
 	w := &colorprofile.Writer{Forward: os.Stdout, Profile: profile}
+	q := term.NewQuantiser(profile)
 	for _, s := range pf.Args() {
 		id, err := strconv.Atoi(strings.TrimPrefix(s, "#"))
 		if err != nil || id < 1 || id > len(a.Tokens) {
@@ -105,7 +106,7 @@ func printTokens(args []string, profile colorprofile.Profile, glyph art.Glyph) e
 		fmt.Fprintf(w, "#%d  %s\nhttps://zilkroad.com%s\n", t.ID, strings.Join(t.Traits[:5], " · "), t.Img)
 		thumb := art.Thumb(t.Art, glyph)
 		if !*card {
-			fmt.Fprintln(w, strings.Join(thumb, "\n"))
+			fmt.Fprintln(w, q.Apply(strings.Join(thumb, "\n")))
 			fmt.Fprintln(w)
 			continue
 		}
@@ -115,7 +116,7 @@ func printTokens(args []string, profile colorprofile.Profile, glyph art.Glyph) e
 			if i < len(thumb) {
 				left = thumb[i]
 			}
-			fmt.Fprintln(w, left+"    "+c)
+			fmt.Fprintln(w, q.Apply(left+"    "+c))
 		}
 		fmt.Fprintln(w)
 	}
