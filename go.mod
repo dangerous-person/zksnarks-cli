@@ -2,6 +2,8 @@ module github.com/dangerous-person/zksnarks-cli
 
 go 1.26.0
 
+toolchain go1.27.3
+
 require (
 	charm.land/bubbletea/v2 v2.1.0
 	github.com/charmbracelet/colorprofile v0.4.3

@@ -3,6 +3,8 @@
 // the first atlas exists.
 package embedded
 
+//go:generate go -C ../../.. run ./cmd/bake
+
 import (
 	"bytes"
 	_ "embed"
