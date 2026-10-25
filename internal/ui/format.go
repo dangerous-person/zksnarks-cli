@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dangerous-person/zksnarks-cli/internal/search"
 )
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -29,9 +31,14 @@ func roundInt(v float64) (int, bool) {
 	return int(math.Round(v)), true
 }
 
+func priced(s string) bool {
+	_, ok := search.Price(s)
+	return ok
+}
+
 // zec formats an amount the way the API wrote it, with at least two decimals.
 func zec(s string) string {
-	if s == "" {
+	if !priced(s) {
 		return "-"
 	}
 	if i := strings.IndexByte(s, '.'); i < 0 {

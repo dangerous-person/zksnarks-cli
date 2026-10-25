@@ -119,8 +119,12 @@ type Model struct {
 	stats     *market.Stats
 	rate      *market.Rate
 	marketAt  time.Time // last successful snapshot
-	marketErr error
-	lastEvent string // time of the newest applied event
+	feeds     [feedCount]feed
+	manual    bool
+	blurred   bool
+	snapAt    time.Time
+	recent    []market.Event
+	lastEvent time.Time // events up to this time are applied
 	floors    [6]map[string]float64
 	floor     float64
 	histories map[int]*history
@@ -166,8 +170,8 @@ func New(o Options) *Model {
 		theme:      themes[0],
 		shimmerAt:  -1,
 		suggSel:    -1,
-		lastEvent:  o.Atlas.Meta.SnapshotAt,
 	}
+	m.lastEvent, _ = parseTime(o.Atlas.Meta.SnapshotAt)
 	for i, t := range m.tokens {
 		m.byID[t.ID] = i
 	}
@@ -205,9 +209,7 @@ func (m *Model) Init() tea.Cmd {
 		cmds = append(cmds, m.startPageTick())
 	}
 	cmds = append(cmds, m.startShimmer(), m.emptyTick())
-	if m.online() {
-		cmds = append(cmds, m.fetchSnapshot(), m.fetchStats(), m.fetchRate(), tickEvents(), tickSnapshot(), tickRate())
-	}
+	cmds = append(cmds, m.startFeeds())
 	return tea.Batch(cmds...)
 }
 
@@ -307,7 +309,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.panel.clamp(m)
 		return m, m.fitPlayer()
 	case tea.KeyPressMsg:
-		return m, tea.Batch(m.key(msg), m.emptyTick())
+		return m, tea.Batch(m.focusIn(), m.key(msg), m.emptyTick())
 	case tea.MouseWheelMsg:
 		m.wheel(msg.Mouse())
 		return m, nil
@@ -370,11 +372,11 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "t":
 		m.cycleTheme()
 		return nil
-	case "r":
+	case "r", "R":
 		if cmd, ok := m.retryHistory(); ok {
 			return cmd
 		}
-		return m.refreshMarket()
+		return m.retryMarket()
 	case "0", "1", "2", "3", "4", "5":
 		return m.setSection(int(k[0] - '0'))
 	case "/":

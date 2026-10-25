@@ -157,12 +157,12 @@ func (m *Model) cardInfo(t *atlas.Token, w, h int, titled bool, ox, oy int) []li
 		}
 	} else {
 		add(text(bold(m.theme.Text), "MARKET_"))
-		if t.Listed && t.Ask != "" {
+		if t.Listed && priced(t.Ask) {
 			add(kv(m, "asking", zec(t.Ask)+" ZEC", m.usdText(t.Ask), w))
 		} else {
 			add(kv(m, "status", "not for sale", "", w))
 		}
-		if t.Bid != "" {
+		if priced(t.Bid) {
 			add(kv(m, "best bid", zec(t.Bid)+" ZEC", m.usdText(t.Bid), w))
 		}
 		if at, ok := parseTime(t.ListedAt); ok && t.Listed {
@@ -307,7 +307,7 @@ func kv(m *Model, k, v, right string, w int) line {
 }
 
 func lastText(s string) string {
-	if s == "" {
+	if !priced(s) {
 		return "-"
 	}
 	return zec(s) + " ZEC"

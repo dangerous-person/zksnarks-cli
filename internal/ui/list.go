@@ -120,7 +120,7 @@ func (m *Model) listLines(w, h int) []line {
 		switch {
 		case t.Purged:
 			price, ps = "purged", fg(m.theme.Warn)
-		case t.Listed && t.Ask != "":
+		case t.Listed && priced(t.Ask):
 			price, ps = zec(t.Ask), textStyle
 		}
 		r.padTo(tableW - width(price))
@@ -206,12 +206,12 @@ func (m *Model) previewInfo(t *atlas.Token, w, h, ox, oy int) []line {
 	switch {
 	case t.Purged:
 		market = append(market, field("STATUS", "purged", fg(m.theme.Warn), ""))
-	case t.Listed && t.Ask != "":
+	case t.Listed && priced(t.Ask):
 		market = append(market, field("ASKING", zec(t.Ask)+" ZEC", white, m.usdText(t.Ask)))
 	default:
 		market = append(market, field("STATUS", "not for sale", white, ""))
 	}
-	if t.Bid != "" {
+	if priced(t.Bid) {
 		market = append(market, field("BEST BID", zec(t.Bid)+" ZEC", white, m.usdText(t.Bid)))
 	}
 	if at, ok := parseTime(t.ListedAt); ok && t.Listed {

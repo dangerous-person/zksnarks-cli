@@ -6,9 +6,11 @@ package market
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -162,72 +164,114 @@ type Client struct {
 	Net     Counter
 }
 
+const (
+	snapshotCap  = 64 << 20
+	bodyCap      = 1 << 20
+	maxRedirects = 3
+)
+
 // New returns a client with sensible timeouts.
 func New(offline bool) *Client {
-	return &Client{HTTP: &http.Client{Timeout: 20 * time.Second}, Offline: offline}
+	return &Client{HTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: checkRedirect}, Offline: offline}
+}
+
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+	o, err := url.Parse(Origin)
+	if err != nil {
+		return err
+	}
+	if req.URL.Scheme != "https" || req.URL.Host != o.Host {
+		return fmt.Errorf("refused a redirect to %s://%s", req.URL.Scheme, req.URL.Host)
+	}
+	return nil
 }
 
 // ErrOffline is returned by every call of an offline client.
 var ErrOffline = fmt.Errorf("offline")
 
-func (c *Client) get(ctx context.Context, path string, perToken bool, v any) error {
+var ErrNotModified = errors.New("not modified")
+
+func (c *Client) get(ctx context.Context, path, etag string, perToken bool, limit int64, v any) (string, error) {
 	if c == nil || c.Offline {
-		return ErrOffline
+		return "", ErrOffline
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", Origin+path, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("User-Agent", UserAgent)
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
 	c.Net.add(perToken)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("%s: HTTP %d", path, resp.StatusCode)
+	if resp.StatusCode == http.StatusNotModified && etag != "" {
+		return etag, ErrNotModified
 	}
-	return json.NewDecoder(resp.Body).Decode(v)
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, limit))
+		return "", fmt.Errorf("%s: HTTP %d", path, resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(body)) > limit {
+		return "", fmt.Errorf("%s: response over %d bytes", path, limit)
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		return "", err
+	}
+	return resp.Header.Get("ETag"), nil
 }
 
 // Snapshot fetches all tokens (about 300 KB compressed).
-func (c *Client) Snapshot(ctx context.Context) (*Snapshot, error) {
+func (c *Client) Snapshot(ctx context.Context, etag string) (*Snapshot, string, error) {
 	var s Snapshot
-	if err := c.get(ctx, "/api/market/tokens", false, &s); err != nil {
-		return nil, err
+	tag, err := c.get(ctx, "/api/market/tokens", etag, false, snapshotCap, &s)
+	if err != nil {
+		return nil, tag, err
 	}
-	return &s, nil
+	return &s, tag, nil
 }
 
 // Stats fetches the collection stats.
-func (c *Client) Stats(ctx context.Context) (*Stats, error) {
+func (c *Client) Stats(ctx context.Context, etag string) (*Stats, string, error) {
 	var s Stats
-	if err := c.get(ctx, "/api/market/stats", false, &s); err != nil {
-		return nil, err
+	tag, err := c.get(ctx, "/api/market/stats", etag, false, bodyCap, &s)
+	if err != nil {
+		return nil, tag, err
 	}
-	return &s, nil
+	return &s, tag, nil
 }
 
 // Rate fetches the ZEC/USD rate.
-func (c *Client) Rate(ctx context.Context) (*Rate, error) {
+func (c *Client) Rate(ctx context.Context, etag string) (*Rate, string, error) {
 	var r Rate
-	if err := c.get(ctx, "/api/market/rate", false, &r); err != nil {
-		return nil, err
+	tag, err := c.get(ctx, "/api/market/rate", etag, false, bodyCap, &r)
+	if err != nil {
+		return nil, tag, err
 	}
-	return &r, nil
+	return &r, tag, nil
 }
 
 // Events fetches the latest market events, newest first.
-func (c *Client) Events(ctx context.Context) ([]Event, error) {
+func (c *Client) Events(ctx context.Context, etag string) ([]Event, string, error) {
 	var e struct {
 		Events []Event `json:"events"`
 	}
-	if err := c.get(ctx, "/api/market/events", false, &e); err != nil {
-		return nil, err
+	tag, err := c.get(ctx, "/api/market/events", etag, false, bodyCap, &e)
+	if err != nil {
+		return nil, tag, err
 	}
-	return e.Events, nil
+	return e.Events, tag, nil
 }
 
 // History fetches one token's provenance, oldest first. This request tells the server which
@@ -236,7 +280,7 @@ func (c *Client) History(ctx context.Context, id int) ([]HistoryEntry, error) {
 	var r struct {
 		History []HistoryEntry `json:"history"`
 	}
-	if err := c.get(ctx, "/api/snarks/"+strconv.Itoa(id), true, &r); err != nil {
+	if _, err := c.get(ctx, "/api/snarks/"+strconv.Itoa(id), "", true, bodyCap, &r); err != nil {
 		return nil, err
 	}
 	return r.History, nil

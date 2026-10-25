@@ -57,6 +57,7 @@ func (m *Model) footRows() int {
 func (m *Model) View() tea.View {
 	v := tea.NewView("")
 	v.AltScreen = true
+	v.ReportFocus = true
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "zkSNARKs"
 	if m.w == 0 || m.h == 0 {
@@ -284,16 +285,21 @@ func (m *Model) tildes(parts []line, n int) line {
 // hintsRow is the line under the box: key hints on the left, the theme key (or the network
 // status, when the market strip is hidden) on the right.
 func (m *Model) hintsRow() string {
-	right := m.hints("t", "theme")
+	rights := []line{m.hints("t", "theme")}
 	if !m.showMarket() {
-		right = m.statusLine()
+		rights = m.statusLines()
 	}
 	room := m.w - 2
-	var hint line
+	var hint, right line
 	fits := false
-	for _, h := range m.footerHints() {
-		if h.w+2+right.w <= room {
-			hint, fits = h, true
+	for _, rt := range rights {
+		for _, h := range m.footerHints() {
+			if h.w+2+rt.w <= room {
+				hint, right, fits = h, rt, true
+				break
+			}
+		}
+		if fits {
 			break
 		}
 	}

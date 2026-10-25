@@ -51,7 +51,7 @@ func (m *Model) events(t *atlas.Token, h *history) []market.HistoryEntry {
 		return t
 	}
 	sort.SliceStable(out, func(a, b int) bool { return at(out[a]).After(at(out[b])) })
-	if la, ok := parseTime(t.ListedAt); ok && t.Listed && t.Ask != "" && (len(out) == 0 || la.After(at(out[0]).Add(time.Minute))) {
+	if la, ok := parseTime(t.ListedAt); ok && t.Listed && priced(t.Ask) && (len(out) == 0 || la.After(at(out[0]).Add(time.Minute))) {
 		live := market.HistoryEntry{Type: "listing_created", Amount: market.Decimal(t.Ask), CreatedAt: t.ListedAt}
 		out = append([]market.HistoryEntry{live}, out...)
 	}
@@ -68,7 +68,7 @@ func (m *Model) eventRow(e market.HistoryEntry, w int, now time.Time) line {
 		r.put(fg(m.theme.Dim), clip(ago(at, now), max(0, w-r.w)))
 	}
 	amount, style := "-", fg(m.theme.Dim)
-	if e.Amount != "" {
+	if priced(string(e.Amount)) {
 		amount, style = zec(string(e.Amount))+" ZEC", fg(m.theme.Text)
 	}
 	if r.w+1+width(amount) <= w {

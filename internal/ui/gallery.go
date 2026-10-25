@@ -78,7 +78,7 @@ func (m *Model) label(t *atlas.Token, sel bool, w int) line {
 	switch {
 	case t.Purged:
 		price, pStyle = "purged", fg(m.theme.Warn)
-	case t.Listed && t.Ask != "":
+	case t.Listed && priced(t.Ask):
 		price, pStyle = zec(t.Ask)+" ZEC", fg(m.theme.Price)
 	}
 	return leftRight(idStyle, "#"+itoa(t.ID), pStyle, price, w)
