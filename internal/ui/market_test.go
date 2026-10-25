@@ -54,7 +54,8 @@ func onlineModel(t *testing.T) *Model {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New(Options{Atlas: a, Client: market.New(false), Media: media.FS, State: State{Section: "zilkroad"}})
+	m := New(Options{Atlas: a, Client: market.New(false), Media: media.FS})
+	openZilkroad(m, false)
 	m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	return m
 }

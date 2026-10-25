@@ -46,7 +46,8 @@ func trueColours(s string) []art.RGB {
 }
 
 func TestNoColorGreysTheChrome(t *testing.T) {
-	m := colourModel(t, Options{NoColor: true, State: State{Theme: "zec", Section: "zilkroad", Grid: true}})
+	m := colourModel(t, Options{NoColor: true, State: State{Theme: "zec"}})
+	openZilkroad(m, true)
 	if m.theme.Name != "plain" {
 		t.Fatalf("theme %q", m.theme.Name)
 	}
@@ -89,7 +90,8 @@ func TestThemeKeyWithColour(t *testing.T) {
 
 func TestIndexedView(t *testing.T) {
 	for _, mode := range []string{"gallery", "list"} {
-		m := colourModel(t, Options{Color: colorprofile.ANSI256, State: State{Section: "zilkroad", Grid: mode == "gallery"}})
+		m := colourModel(t, Options{Color: colorprofile.ANSI256})
+		openZilkroad(m, mode == "gallery")
 		s := m.View().Content
 		if strings.Contains(s, "8;2;") || !strings.Contains(s, "\x1b[38;5;") || !strings.Contains(s, "\x1b[48;5;") {
 			t.Errorf("%s: not drawn in indexed colours", mode)
@@ -99,7 +101,8 @@ func TestIndexedView(t *testing.T) {
 			t.Errorf("%s: card open %v, not drawn in indexed colours", mode, m.overlay())
 		}
 	}
-	m := colourModel(t, Options{Color: colorprofile.TrueColor, State: State{Section: "zilkroad", Grid: true}})
+	m := colourModel(t, Options{Color: colorprofile.TrueColor})
+	openZilkroad(m, true)
 	if s := m.View().Content; strings.Contains(s, "8;5;") || !strings.Contains(s, "\x1b[48;2;") {
 		t.Error("truecolor view is not drawn in truecolor")
 	}

@@ -14,6 +14,29 @@ const (
 	helpSide = 17
 )
 
+var helpFind = [][2]string{
+	{"a trait, by first letters", "skele"},
+	{"more traits, all must match", "skele rim"},
+	{"one trait, exact value", `eyes:"rim cobalt"`},
+	{"one trait, this or that", "lineage:noise,dune"},
+	{"one zkSNARK, or a few", "#7724   #7724 #12"},
+}
+
+var helpShowSort = [][4]string{
+	{"for sale now", "listed", "cheapest first", "sort:price"},
+	{"under 1.5 ZEC", "price<1.5", "priciest first", "sort:-price"},
+	{"last sold over 2", "last>2", "rarest first", "sort:rank"},
+	{"the 100 rarest", "rank<=100", "newest listings", "sort:new"},
+	{"burnt", "purged", "by number", "sort:number"},
+}
+
+const helpStatuses = "unlisted  apparition  auction"
+
+var helpOther = [][2]string{
+	{"other statuses", helpStatuses},
+	{"mix any of these", "skele sort:rank"},
+}
+
 func (m *Model) helpShown() bool { return m.section == secZilkroad && m.helpOpen }
 
 func (m *Model) helpLines() []line {
@@ -49,27 +72,19 @@ func (m *Model) helpLines() []line {
 	sections.padTo(helpCol)
 	sections.put(bold(m.theme.Text), "SORT_")
 
-	return []line{
-		intro.line(),
-		{},
-		heading("FIND_"),
-		pair("a trait, by first letters", "skele"),
-		pair("more traits, all must match", "skele rim"),
-		pair("one trait, exact value", `eyes:"rim cobalt"`),
-		pair("one trait, this or that", "lineage:noise,dune"),
-		pair("one zkSNARK, or a few", "#7724   #7724 #12"),
-		rule,
-		sections.line(),
-		twin("for sale now", "listed", "cheapest first", "sort:price"),
-		twin("under 1.5 ZEC", "price<1.5", "priciest first", "sort:-price"),
-		twin("last sold over 2", "last>2", "rarest first", "sort:rank"),
-		twin("the 100 rarest", "rank<=100", "newest listings", "sort:new"),
-		twin("burnt", "purged", "by number", "sort:number"),
-		rule,
-		heading("OTHER_"),
-		pair("other statuses", "unlisted  apparition  auction"),
-		pair("mix any of these", "skele listed price<1 sort:price"),
+	out := []line{intro.line(), {}, heading("FIND_")}
+	for _, p := range helpFind {
+		out = append(out, pair(p[0], p[1]))
 	}
+	out = append(out, rule, sections.line())
+	for _, t := range helpShowSort {
+		out = append(out, twin(t[0], t[1], t[2], t[3]))
+	}
+	out = append(out, rule, heading("OTHER_"))
+	for _, p := range helpOther {
+		out = append(out, pair(p[0], p[1]))
+	}
+	return out
 }
 
 func (m *Model) drawHelp(cv *canvas) {

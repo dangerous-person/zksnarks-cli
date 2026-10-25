@@ -167,7 +167,8 @@ func (q Query) showsPurged() bool {
 	return false
 }
 
-// Filter returns the indices of the tokens matching every term, in token order.
+// Filter returns the indices of the tokens matching every term, in token order. Token
+// numbers are the exception: a token matches the query's numbers when it is any of them.
 func (ix *Index) Filter(q Query, tokens []atlas.Token) []int {
 	purged := q.showsPurged()
 	out := make([]int, 0, len(tokens))
@@ -176,18 +177,27 @@ func (ix *Index) Filter(q Query, tokens []atlas.Token) []int {
 		if t.Purged && !purged {
 			continue
 		}
-		ok := true
-		for j := range q.Terms {
-			if !ix.match(i, t, &q.Terms[j]) {
-				ok = false
-				break
-			}
-		}
-		if ok {
+		if ix.matches(i, t, q.Terms) {
 			out = append(out, i)
 		}
 	}
 	return out
+}
+
+func (ix *Index) matches(i int, t *atlas.Token, terms []Term) bool {
+	ids, id := false, false
+	for j := range terms {
+		term := &terms[j]
+		if term.Kind == ID {
+			ids = true
+			id = id || ix.match(i, t, term)
+			continue
+		}
+		if !ix.match(i, t, term) {
+			return false
+		}
+	}
+	return !ids || id
 }
 
 // Run filters and sorts. Tokens without the sort key (unlisted for price and new, unranked

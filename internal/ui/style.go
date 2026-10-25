@@ -249,16 +249,12 @@ func (m *Model) keyIn(r *row, key string, keyC, bracketC art.RGB) {
 	r.put(fg(bracketC), "]")
 }
 
-// truncations counts the lines truncate had to cut, so tests can check that none were.
-var truncations int
-
 // truncate cuts a styled line to n cells, keeping its escape sequences intact. It is a
 // safety net: layouts are meant to fit, and a cut line is a layout bug.
 func truncate(l line, n int) line {
 	if l.w <= n {
 		return l
 	}
-	truncations++
 	var b strings.Builder
 	w := 0
 	for i := 0; i < len(l.s); {

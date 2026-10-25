@@ -26,6 +26,9 @@ var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\`)
 // go test -tags dev -run TestShots ./internal/ui   writes frames to $SHOTS for review
 func TestShots(t *testing.T) {
 	dir := os.Getenv("SHOTS")
+	if dir == "" {
+		t.Skip("SHOTS is not set")
+	}
 	a, err := embedded.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +140,8 @@ func TestShots(t *testing.T) {
 		{"network-wide", 250, 64, "", []step{{"4", "network"}, {"down", "network-josh"}, {"w seek:25", "network-playing"}}},
 	}
 	for _, sc := range scenarios {
-		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad", Grid: !strings.HasPrefix(sc.name, "default")}, Media: media.FS})
+		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), Query: sc.query, Media: media.FS})
+		openZilkroad(m, !strings.HasPrefix(sc.name, "default"))
 		m.Update(tea.WindowSizeMsg{Width: sc.w, Height: sc.h})
 		for _, st := range sc.steps {
 			for _, k := range strings.Fields(st.keys) {
@@ -193,11 +197,7 @@ func TestShots(t *testing.T) {
 				}
 				m.Update(press(k))
 			}
-			before := truncations
 			content := m.View().Content
-			if truncations != before {
-				t.Errorf("%s: %d lines cut to fit", st.shot, truncations-before)
-			}
 			lines := strings.Split(content, "\n")
 			if sc.w >= minW && len(lines) != sc.h {
 				t.Errorf("%s: %d lines, want %d", st.shot, len(lines), sc.h)

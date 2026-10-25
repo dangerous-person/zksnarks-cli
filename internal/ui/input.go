@@ -13,10 +13,15 @@ type input struct {
 	text string
 }
 
+const maxQuery = 200
+
 func (in *input) set(s string) {
 	in.r = []rune(s)
+	if len(in.r) > maxQuery {
+		in.r = in.r[:maxQuery]
+	}
 	in.pos = len(in.r)
-	in.text = s
+	in.text = string(in.r)
 }
 
 func (in *input) end() { in.pos = len(in.r) }
@@ -67,9 +72,38 @@ func (in *input) key(msg tea.KeyPressMsg) bool {
 				add = append(add, c)
 			}
 		}
-		in.r = append(in.r[:in.pos], append(add, in.r[in.pos:]...)...)
-		in.pos += len(add)
+		in.insert(add)
 	}
 	in.text = string(in.r)
 	return in.text != before
+}
+
+func (in *input) paste(s string) bool {
+	var add []rune
+	space := false
+	for _, c := range s {
+		switch {
+		case unicode.IsSpace(c):
+			space = true
+		case unicode.IsPrint(c):
+			if space {
+				add = append(add, ' ')
+				space = false
+			}
+			add = append(add, c)
+		}
+	}
+	if space {
+		add = append(add, ' ')
+	}
+	before := in.text
+	in.insert(add)
+	in.text = string(in.r)
+	return in.text != before
+}
+
+func (in *input) insert(add []rune) {
+	add = add[:min(len(add), max(0, maxQuery-len(in.r)))]
+	in.r = append(in.r[:in.pos], append(add, in.r[in.pos:]...)...)
+	in.pos += len(add)
 }

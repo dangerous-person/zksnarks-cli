@@ -44,10 +44,7 @@ const (
 
 // State is what the app remembers between runs.
 type State struct {
-	Query   string `json:"query"`
-	Grid    bool   `json:"grid"` // the gallery instead of the list, which zilkroad opens with
-	Theme   string `json:"theme"`
-	Section string `json:"section"`
+	Theme string `json:"theme"`
 }
 
 // Options configure a Model.
@@ -59,6 +56,7 @@ type Options struct {
 	NoColor bool
 	Client  *market.Client
 	State   State
+	Query   string
 	Media   fs.FS // the interviews, the trailer and the stills; nil for none
 }
 
@@ -174,6 +172,7 @@ func New(o Options) *Model {
 		interviews: map[int]*interview{},
 		theme:      themes[0],
 		quant:      term.NewQuantiser(o.Color),
+		mode:       modeList,
 		shimmerAt:  -1,
 		suggSel:    -1,
 	}
@@ -189,16 +188,8 @@ func New(o Options) *Model {
 	if o.NoColor {
 		m.theme = plainTheme
 	}
-	if !o.State.Grid {
-		m.mode = modeList
-	}
-	for i, name := range sectionNames {
-		if name == o.State.Section {
-			m.section = i
-		}
-	}
 	m.ix = search.NewIndex(m.tokens)
-	m.input.set(o.State.Query)
+	m.input.set(o.Query)
 	m.refresh(false)
 	m.computeFloors()
 	return m
@@ -210,7 +201,7 @@ func (m *Model) SavedState() State {
 	if m.opts.NoColor {
 		theme = m.opts.State.Theme
 	}
-	return State{Query: m.input.text, Grid: m.mode == modeGallery, Theme: theme, Section: sectionNames[m.section]}
+	return State{Theme: theme}
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -323,6 +314,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fitPlayer()
 	case tea.KeyPressMsg:
 		return m, tea.Batch(m.focusIn(), m.key(msg), m.emptyTick())
+	case tea.PasteMsg:
+		if m.focus == focusQuery && m.input.paste(msg.Content) {
+			m.refresh(true)
+		}
+		return m, tea.Batch(m.focusIn(), m.emptyTick())
 	case tea.MouseWheelMsg:
 		m.wheel(msg.Mouse())
 		return m, nil
@@ -474,6 +470,8 @@ func (m *Model) setSection(s int) tea.Cmd {
 		return nil
 	}
 	m.section = s
+	m.focus = focusMain
+	m.sugg = nil
 	m.closePlayer()
 	m.closeMontage()
 	m.contactOpen, m.contactCopied = false, false

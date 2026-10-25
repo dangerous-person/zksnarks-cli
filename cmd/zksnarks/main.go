@@ -12,11 +12,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas/embedded"
@@ -62,6 +64,17 @@ func main() {
 		}
 		files = os.DirFS(*mediaDir)
 	}
+	if !xterm.IsTerminal(os.Stdout.Fd()) || os.Getenv("TERM") == "dumb" {
+		needTerminal()
+	}
+	opts := []tea.ProgramOption{tea.WithColorProfile(profile)}
+	if !xterm.IsTerminal(os.Stdin.Fd()) {
+		in, _, err := tea.OpenTTY()
+		if err != nil {
+			needTerminal()
+		}
+		opts = append(opts, tea.WithInput(in))
+	}
 	a, err := embedded.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
@@ -72,12 +85,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
 		os.Exit(1)
 	}
-	st := loadState()
-	if *query != "" {
-		st.Query = *query
-	}
-	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Color: profile, NoColor: os.Getenv("NO_COLOR") != "", Client: market.New(*offline), State: st, Media: files})
-	final, err := tea.NewProgram(m, tea.WithColorProfile(profile)).Run()
+	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Color: profile, NoColor: os.Getenv("NO_COLOR") != "", Client: market.New(*offline), State: loadState(), Query: *query, Media: files})
+	final, err := tea.NewProgram(m, opts...).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
 		os.Exit(1)
@@ -85,6 +94,15 @@ func main() {
 	if fm, ok := final.(*ui.Model); ok {
 		saveState(fm.SavedState())
 	}
+}
+
+func needTerminal() {
+	msg := "zksnarks needs an interactive terminal.\ntry: zksnarks print 7724   (prints one token as text)\n"
+	if runtime.GOOS == "windows" {
+		msg += "in Git Bash run: winpty zksnarks\n"
+	}
+	fmt.Fprint(os.Stderr, msg)
+	os.Exit(1)
 }
 
 func printTokens(args []string, profile colorprofile.Profile, glyph art.Glyph) error {
@@ -123,7 +141,7 @@ func printTokens(args []string, profile colorprofile.Profile, glyph art.Glyph) e
 	return nil
 }
 
-// stateFile is the remembered query, view and theme, in the XDG config directory.
+// stateFile is the remembered theme, in the XDG config directory.
 func stateFile() string {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {

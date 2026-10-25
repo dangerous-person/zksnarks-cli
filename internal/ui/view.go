@@ -76,7 +76,7 @@ func (m *Model) queryLine() (line, int) {
 	cursor := 2 + r.w
 	switch {
 	case m.input.text == "" && m.focus != focusQuery:
-		r.put(fg(m.theme.MarketLabel), clip("skele · rim cobalt · #7724 · price<1 · sort:rank", avail))
+		r.put(fg(m.theme.MarketLabel), clip(queryHint, avail))
 	default:
 		runes := m.input.r
 		start := 0
@@ -106,6 +106,8 @@ func (m *Model) queryLine() (line, int) {
 	}
 	return r.line(), cursor
 }
+
+const queryHint = "skele · rim cobalt · #7724 · price<1 · sort:rank"
 
 func (m *Model) supplyShown() int {
 	if m.q.HasStatus("purged") {

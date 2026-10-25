@@ -57,7 +57,7 @@ func TestRun(t *testing.T) {
 		{"price<5", []int{3, 4}},                 // only listed tokens have a price
 		{"rank<=30", []int{1, 2, 3}},             // apparitions are unranked
 		{"purged", []int{7}},                     // purged only on request
-		{"#7 #3", nil},                           // two ID terms AND: nothing
+		{"#7 #3", []int{3, 7}},                   // ID terms OR
 		{"#7,3", []int{3, 7}},                    // ID list; shows purged
 		{"sort:price", []int{4, 3, 2, 1, 5, 6}},  // listed by price, then the rest by number
 		{"sort:-price", []int{2, 3, 4, 1, 5, 6}}, // reversed, unlisted still last
@@ -65,6 +65,10 @@ func TestRun(t *testing.T) {
 		{"sort:new", []int{4, 3, 2, 1, 5, 6}},    // newest listing first
 		{"skele sort:rank", []int{3, 4, 5}},      // sort with a filter
 		{"apparition", []int{6}},                 // status
+		{"#7,3 #5", []int{3, 5, 7}},
+		{"skele #1 #3", []int{3}},
+		{"#1 #3 #4 listed", []int{3, 4}},
+		{"#9 #3", []int{3}},
 	}
 	for _, c := range cases {
 		q := Parse(c.q, ix.Cat)
