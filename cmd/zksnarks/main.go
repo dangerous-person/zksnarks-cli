@@ -21,6 +21,7 @@ import (
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas/embedded"
 	"github.com/dangerous-person/zksnarks-cli/internal/market"
+	"github.com/dangerous-person/zksnarks-cli/internal/media"
 	"github.com/dangerous-person/zksnarks-cli/internal/term"
 	"github.com/dangerous-person/zksnarks-cli/internal/ui"
 )
@@ -33,7 +34,7 @@ func main() {
 	colorFlag := fs.String("color", "auto", "colour profile: auto, truecolor or 256")
 	glyphFlag := fs.String("glyph", "auto", "cell split glyph: auto, half (▀) or five-eighths (▅, for Terminal.app)")
 	query := fs.String("q", "", "start with this search query")
-	media := fs.String("media", "", "folder with the spotlight interviews (NAME.zkv and NAME.mp3), the front page's still (front.zkv), the trailer (trailer/montage.json) and the about page's clip (noisebody.zkv) (default: media next to the program or in the current folder)")
+	mediaDir := fs.String("media", "", "read the media from this folder instead of the copy inside the program: the front page's still (front.zkv), the trailer (trailer/montage.json), the spotlight interviews (NAME.zkv and NAME.mp3) and the about page's clip (noisebody.zkv)")
 	showVersion := fs.Bool("version", false, "print the version")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: zksnarks [flags]\n       zksnarks [flags] print [-card] N...\n\n")
@@ -53,6 +54,14 @@ func main() {
 		}
 		return
 	}
+	files := media.FS
+	if *mediaDir != "" {
+		if st, err := os.Stat(*mediaDir); err != nil || !st.IsDir() {
+			fmt.Fprintln(os.Stderr, "zksnarks: -media: there is no folder", *mediaDir)
+			os.Exit(1)
+		}
+		files = os.DirFS(*mediaDir)
+	}
 	a, err := embedded.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
@@ -67,7 +76,7 @@ func main() {
 	if *query != "" {
 		st.Query = *query
 	}
-	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Client: market.New(*offline), State: st, Media: mediaDir(*media)})
+	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Client: market.New(*offline), State: st, Media: files})
 	final, err := tea.NewProgram(m, tea.WithColorProfile(profile)).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
@@ -111,26 +120,6 @@ func printTokens(args []string, profile colorprofile.Profile, glyph art.Glyph) e
 		fmt.Fprintln(w)
 	}
 	return nil
-}
-
-// mediaDir is the folder with the spotlight interviews: the flag's, or the first media
-// folder next to the program or in the current folder.
-func mediaDir(flagged string) string {
-	if flagged != "" {
-		return flagged
-	}
-	var dirs []string
-	if exe, err := os.Executable(); err == nil {
-		if exe, err = filepath.EvalSymlinks(exe); err == nil {
-			dirs = append(dirs, filepath.Join(filepath.Dir(exe), "media"))
-		}
-	}
-	for _, d := range append(dirs, "media") {
-		if st, err := os.Stat(d); err == nil && st.IsDir() {
-			return d
-		}
-	}
-	return ""
 }
 
 // stateFile is the remembered query, view and theme, in the XDG config directory.

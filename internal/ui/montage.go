@@ -2,14 +2,11 @@ package ui
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
 	"math"
-	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -17,15 +14,13 @@ import (
 
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/audio"
-	"github.com/dangerous-person/zksnarks-cli/internal/market"
 	"github.com/dangerous-person/zksnarks-cli/internal/video"
 )
 
 type montage struct {
-	Sound    string        `json:"sound"`
-	SoundURL string        `json:"soundURL"`
-	Title    string        `json:"title"`
-	Items    []montageItem `json:"items"`
+	Sound string        `json:"sound"`
+	Title string        `json:"title"`
+	Items []montageItem `json:"items"`
 }
 
 type montageItem struct {
@@ -39,12 +34,11 @@ type montageItem struct {
 
 type montagePlayer struct {
 	read       bool
+	decoded    bool
 	items      []montageItem
 	lead       time.Duration
 	cols, rows int
 	title      string
-	mp3        []byte
-	soundURL   string
 	soundFile  string
 	sound      sound
 	loading    bool
@@ -65,22 +59,13 @@ type montageSoundMsg struct {
 	err   error
 }
 
-type montageTrackMsg struct {
-	mp3 []byte
-	err error
-}
-
 func (m *Model) montageRead() {
 	p := &m.mont
 	if p.read {
 		return
 	}
 	p.read = true
-	if m.opts.Media == "" {
-		return
-	}
-	dir := filepath.Join(m.opts.Media, "trailer")
-	data, err := os.ReadFile(filepath.Join(dir, "montage.json"))
+	data, err := readMedia(m.opts.Media, "trailer/montage.json")
 	if err != nil {
 		return
 	}
@@ -88,21 +73,17 @@ func (m *Model) montageRead() {
 	if json.Unmarshal(data, &mt) != nil {
 		return
 	}
-	clips := map[string]*video.Video{}
+	found := map[string]bool{}
 	for _, it := range mt.Items {
-		name := filepath.Base(it.Clip)
-		v, ok := clips[name]
-		if !ok {
-			if b, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
-				v, _ = video.Read(b)
-			}
-			clips[name] = v
+		name := path.Join("trailer", path.Base(it.Clip))
+		ok, seen := found[name]
+		if !seen {
+			ok = isMedia(m.opts.Media, name)
+			found[name] = ok
 		}
-		if v != nil && it.Len > 0 && it.In >= 0 {
-			it.video = v
+		if ok && it.Len > 0 && it.In >= 0 {
+			it.Clip = name
 			p.items = append(p.items, it)
-			c, r := v.Size()
-			p.cols, p.rows = max(p.cols, c), max(p.rows, r)
 		}
 	}
 	if len(p.items) == 0 {
@@ -113,89 +94,55 @@ func (m *Model) montageRead() {
 	p.at = p.lead
 	p.title = mt.Title
 	if mt.Sound != "" {
-		name := filepath.Base(mt.Sound)
-		p.soundFile, p.soundURL = name, mt.SoundURL
-		p.mp3, _ = os.ReadFile(filepath.Join(dir, name))
-		if p.mp3 == nil {
-			if path, ok := trackCache(name); ok {
-				p.mp3, _ = os.ReadFile(path)
-			}
+		name := path.Base(mt.Sound)
+		if f := path.Join("trailer", name); isMedia(m.opts.Media, f) {
+			p.soundFile = f
 		}
 		if p.title == "" {
-			p.title = strings.TrimSuffix(name, filepath.Ext(name))
+			p.title = strings.TrimSuffix(name, path.Ext(name))
 		}
 	}
 }
 
-func trackCache(name string) (string, bool) {
-	dir, err := os.UserCacheDir()
-	if err != nil || name == "" {
-		return "", false
-	}
-	return filepath.Join(dir, "zksnarks", name), true
-}
-
-func (m *Model) fetchTrack() tea.Cmd {
-	m.montageRead()
+func (m *Model) montageDecode() bool {
 	p := &m.mont
-	if p.mp3 != nil || p.soundURL == "" || !m.online() {
-		return nil
+	if p.decoded {
+		return len(p.items) > 0
 	}
-	path, ok := trackCache(p.soundFile)
-	if !ok {
-		return nil
+	p.decoded = true
+	var names []string
+	index := map[string]int{}
+	for _, it := range p.items {
+		if _, ok := index[it.Clip]; !ok {
+			index[it.Clip] = len(names)
+			names = append(names, it.Clip)
+		}
 	}
-	url := p.soundURL
-	return func() tea.Msg {
-		data, err := download(url)
-		if err == nil {
-			if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
-				err = writeFile(path, data)
+	clips := make([]*video.Video, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Go(func() {
+			if b, err := readMedia(m.opts.Media, name); err == nil {
+				clips[i], _ = video.Read(b)
 			}
+		})
+	}
+	wg.Wait()
+	items := p.items[:0]
+	for _, it := range p.items {
+		if v := clips[index[it.Clip]]; v != nil {
+			it.video = v
+			items = append(items, it)
+			c, r := v.Size()
+			p.cols, p.rows = max(p.cols, c), max(p.rows, r)
 		}
-		return montageTrackMsg{data, err}
 	}
-}
-
-func download(url string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
+	p.items = items
+	if len(items) > 0 {
+		p.lead = time.Duration(items[0].Start * float64(time.Second))
+		p.at = p.lead
 	}
-	req.Header.Set("User-Agent", market.UserAgent)
-	res, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %s", url, res.Status)
-	}
-	data, err := io.ReadAll(io.LimitReader(res.Body, 64<<20))
-	if err == nil && res.ContentLength >= 0 && int64(len(data)) != res.ContentLength {
-		err = fmt.Errorf("%s: %d of %d bytes", url, len(data), res.ContentLength)
-	}
-	return data, err
-}
-
-func writeFile(path string, data []byte) error {
-	tmp := path + ".part"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func (m *Model) onMontageTrack(msg montageTrackMsg) tea.Cmd {
-	p := &m.mont
-	if msg.err != nil || p.mp3 != nil {
-		return nil
-	}
-	p.mp3 = msg.mp3
-	if p.state == watchPlaying {
-		return m.loadMontageSound()
-	}
-	return nil
+	return len(items) > 0
 }
 
 func (m *Model) hasMontage() bool {
@@ -238,7 +185,7 @@ func (m *Model) montageLength() time.Duration {
 }
 
 func (m *Model) openMontage() tea.Cmd {
-	if !m.hasMontage() {
+	if !m.hasMontage() || !m.montageDecode() {
 		return nil
 	}
 	m.mont.open = true
@@ -272,13 +219,21 @@ func (m *Model) playMontage() tea.Cmd {
 
 func (m *Model) loadMontageSound() tea.Cmd {
 	p := &m.mont
-	if p.mp3 == nil || p.sound != nil || p.loading || p.soundErr != nil {
+	if p.soundFile == "" || p.sound != nil || p.loading || p.soundErr != nil {
+		return nil
+	}
+	if err := audio.Err(); err != nil {
+		p.soundErr = err
 		return nil
 	}
 	p.loading = true
-	mp3 := p.mp3
+	media, name := m.opts.Media, p.soundFile
 	return func() tea.Msg {
-		s, err := audio.Load(mp3)
+		data, err := readMedia(media, name)
+		if err != nil {
+			return montageSoundMsg{nil, err}
+		}
+		s, err := audio.Load(data)
 		if err != nil {
 			return montageSoundMsg{nil, err}
 		}
@@ -361,6 +316,15 @@ func (m *Model) montageTick() tea.Cmd {
 
 func (m *Model) montageClock(now time.Time) time.Duration {
 	p := &m.mont
+	if p.state == watchPlaying && p.sound != nil {
+		if err := p.sound.Err(); err != nil {
+			if p.synced {
+				p.base += now.Sub(p.t0)
+			}
+			p.sound.Pause()
+			p.sound, p.soundErr, p.synced, p.t0 = nil, err, false, now
+		}
+	}
 	switch {
 	case p.state != watchPlaying:
 		return p.at
@@ -454,8 +418,12 @@ func (m *Model) montageLines(w, h int) []line {
 	p := &m.mont
 	dim := fg(m.captionColour())
 	under := []line{{}}
-	if p.title != "" {
-		under = append(under, text(dim, clip(p.title, w)))
+	title := p.title
+	if p.soundErr != nil || p.soundFile == "" || audio.Err() != nil {
+		title = "no sound"
+	}
+	if title != "" {
+		under = append(under, text(dim, clip(title, w)))
 	}
 	under = append(under, text(dim, mmss(p.at-p.lead)+" / "+mmss(m.montageLength()-p.lead)))
 	if min(p.rows, h-len(under)) < montageMinRows {

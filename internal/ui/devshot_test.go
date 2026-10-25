@@ -18,6 +18,7 @@ import (
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas/embedded"
 	"github.com/dangerous-person/zksnarks-cli/internal/market"
+	"github.com/dangerous-person/zksnarks-cli/internal/media"
 )
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\`)
@@ -136,7 +137,7 @@ func TestShots(t *testing.T) {
 		{"network-wide", 250, 64, "", []step{{"4", "network"}, {"down", "network-josh"}, {"w seek:25", "network-playing"}}},
 	}
 	for _, sc := range scenarios {
-		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad", Grid: !strings.HasPrefix(sc.name, "default")}, Media: "../../media"})
+		m := New(Options{Atlas: a, Site: content, Glyph: art.UpperHalf, Client: market.New(true), State: State{Query: sc.query, Section: "zilkroad", Grid: !strings.HasPrefix(sc.name, "default")}, Media: media.FS})
 		m.Update(tea.WindowSizeMsg{Width: sc.w, Height: sc.h})
 		for _, st := range sc.steps {
 			for _, k := range strings.Fields(st.keys) {

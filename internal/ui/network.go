@@ -259,6 +259,14 @@ func figureTop(back []bool) int {
 	return 0
 }
 
+func (m *Model) playerSmall(c *interview) bool {
+	if m.w < minW || m.h < minH {
+		return true
+	}
+	cols, rows := c.video.Size()
+	return modalChromeW+cols > m.w-4 || modalChromeH+rows+2 > m.h-m.footRows()-m.headRows()
+}
+
 // drawPlayer layers the interview's window over the dimmed page like the card's: the
 // collector's name on the top of its frame, the video on black with its progress under it,
 // and on the bottom of the frame the keys on the left and the time on the right. A window
@@ -275,7 +283,7 @@ func (m *Model) drawPlayer(cv *canvas) {
 	cols, rows := c.video.Size()
 	content := m.player(m.spot, c)
 	cw := cols
-	small := modalChromeW+cols > areaW || modalChromeH+len(content) > areaH
+	small := m.playerSmall(c)
 	if small {
 		needW := modalChromeW + cols + 4 // and the page's border and padding
 		needH := modalChromeH + len(content) + m.headRows() + 2

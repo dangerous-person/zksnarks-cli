@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"os"
-	"path/filepath"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -14,7 +12,7 @@ import (
 
 const contactAddress = "u1nsh3r8zzgw3dchskyq7t30xthu5awuksg8u63fgs6uwmlxdczgx0q4cjtr3thkjnlyl22dxtk78s3y7c8lkuxavtldruekpprvpmml7v"
 
-const contactByline = "noisebody · Zecathon 2026"
+const contactByline = "noisebody · ZECATHON 2026"
 
 var contactParagraphs = [][]string{
 	{
@@ -31,7 +29,7 @@ var contactParagraphs = [][]string{
 		"with the app. All it fetches is public market data.",
 	},
 	{
-		"I built it for the zkSNARKs Zecathon 2026. If something",
+		"I built it for the zkSNARKs ZECATHON 2026. If something",
 		"broke or made you smile, tell me in a shielded memo.",
 		"Only I can read it.",
 	},
@@ -150,11 +148,9 @@ func (m *Model) contactWords(keep []int, show line, w int) []line {
 func (m *Model) contactClipNow() *video.Video {
 	if !m.contactClipRead {
 		m.contactClipRead = true
-		if m.opts.Media != "" {
-			if b, err := os.ReadFile(filepath.Join(m.opts.Media, "noisebody.zkv")); err == nil {
-				if m.contactClip, _ = video.Read(b); m.contactClip != nil {
-					m.contactFrame = min(contactStill, m.contactClip.Frames()-1)
-				}
+		if b, err := readMedia(m.opts.Media, "noisebody.zkv"); err == nil {
+			if m.contactClip, _ = video.Read(b); m.contactClip != nil {
+				m.contactFrame = min(contactStill, m.contactClip.Frames()-1)
 			}
 		}
 	}
@@ -199,7 +195,7 @@ func (m *Model) onContactTick() tea.Cmd {
 		}
 		return nil
 	}
-	if !m.contactOpen {
+	if !m.contactOpen && m.contactPic != (rect{}) {
 		m.contactFrame = (m.contactFrame + 1) % m.contactClip.Frames()
 	}
 	return m.contactTick()
@@ -312,7 +308,7 @@ func (m *Model) qrLines(code *qr.Code, figure bool) []line {
 }
 
 func (m *Model) contactKey(k string) tea.Cmd {
-	if k == "space" && m.contactClip != nil && !m.contactOpen {
+	if k == "space" && m.contactClip != nil && !m.contactOpen && m.contactPic != (rect{}) {
 		return m.playContact()
 	}
 	switch k {

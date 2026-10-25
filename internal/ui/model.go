@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"io/fs"
 	"strings"
 	"time"
 
@@ -54,7 +55,7 @@ type Options struct {
 	Glyph  art.Glyph
 	Client *market.Client
 	State  State
-	Media  string // the folder with the spotlight interviews; "" for none
+	Media  fs.FS // the interviews, the trailer and the stills; nil for none
 }
 
 type history struct {
@@ -205,7 +206,7 @@ func (m *Model) Init() tea.Cmd {
 	}
 	cmds = append(cmds, m.startShimmer(), m.emptyTick())
 	if m.online() {
-		cmds = append(cmds, m.fetchSnapshot(), m.fetchStats(), m.fetchRate(), tickEvents(), tickSnapshot(), tickRate(), m.fetchTrack())
+		cmds = append(cmds, m.fetchSnapshot(), m.fetchStats(), m.fetchRate(), tickEvents(), tickSnapshot(), tickRate())
 	}
 	return tea.Batch(cmds...)
 }
@@ -304,7 +305,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.w, m.h = msg.Width, msg.Height
 		m.ensureVisible()
 		m.panel.clamp(m)
-		return m, nil
+		return m, m.fitPlayer()
 	case tea.KeyPressMsg:
 		return m, tea.Batch(m.key(msg), m.emptyTick())
 	case tea.MouseWheelMsg:
@@ -324,8 +325,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onContactTick()
 	case montageTickMsg:
 		return m, m.onMontageTick(msg)
-	case montageTrackMsg:
-		return m, m.onMontageTrack(msg)
 	case montageSoundMsg:
 		m.onMontageSound(msg)
 		return m, nil

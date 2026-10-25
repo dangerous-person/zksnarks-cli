@@ -3,8 +3,6 @@ package ui
 import (
 	"math"
 	"math/rand/v2"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -252,9 +250,7 @@ func (m *Model) frontStill() ([]line, int) {
 func (m *Model) stillNow() *still {
 	if !m.frontRead {
 		m.frontRead = true
-		if m.opts.Media != "" {
-			m.front = m.readStill(filepath.Join(m.opts.Media, "front.zkv"))
-		}
+		m.front = m.readStill("front.zkv")
 	}
 	return m.front
 }
@@ -349,8 +345,8 @@ func (m *Model) onStillTick() tea.Cmd {
 	return m.stillTick()
 }
 
-func (m *Model) readStill(path string) *still {
-	b, err := os.ReadFile(path)
+func (m *Model) readStill(name string) *still {
+	b, err := readMedia(m.opts.Media, name)
 	if err != nil {
 		return nil
 	}

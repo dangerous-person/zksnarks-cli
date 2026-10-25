@@ -290,13 +290,14 @@ func (m *Model) hintsRow() string {
 	}
 	room := m.w - 2
 	var hint line
+	fits := false
 	for _, h := range m.footerHints() {
 		if h.w+2+right.w <= room {
-			hint = h
+			hint, fits = h, true
 			break
 		}
 	}
-	if hint.w == 0 {
+	if !fits {
 		right = line{}
 		for _, h := range m.footerHints() {
 			if h.w <= room {

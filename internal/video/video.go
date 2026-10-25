@@ -53,15 +53,29 @@ type Video struct {
 	glyph  art.Glyph
 }
 
+const (
+	maxCols, maxRows = 512, 256
+	maxFrames        = 20000
+	maxFile          = 64 << 20
+	maxDecoded       = 256 << 20
+	minFPS, maxFPS   = 1, 120
+)
+
 // Read decodes a .zkv file.
 func Read(data []byte) (*Video, error) {
+	if len(data) > maxFile {
+		return nil, errors.New("video: the file is too big")
+	}
 	z, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
-	raw, err := io.ReadAll(z)
+	raw, err := io.ReadAll(io.LimitReader(z, maxDecoded+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(raw) > maxDecoded {
+		return nil, errors.New("video: the clip is too big")
 	}
 	v := &Video{shown: -1}
 	for len(raw) > 0 {
@@ -74,6 +88,9 @@ func Read(data []byte) (*Video, error) {
 			if c, r := s.cells(); c != c0 || r != r0 || s.fps != v.scenes[0].fps {
 				return nil, errors.New("video: the scenes differ in size or frame rate")
 			}
+		}
+		if v.count+len(s.frames) > maxFrames {
+			return nil, errors.New("video: too many frames")
 		}
 		s.first = v.count
 		s.plane = make([]byte, len(s.frames[0]))
@@ -120,7 +137,16 @@ func readScene(data []byte) (*scene, []byte, error) {
 			s.fill, head = int(data[head]), head+1
 		}
 	}
-	if s.w == 0 || (s.symbols == nil && s.h%2 != 0) || s.fps <= 0 || s.keyEvery == 0 || count == 0 || len(data) < head+count*n {
+	if cols, rows := s.cells(); cols > maxCols || rows > maxRows {
+		return nil, nil, errors.New("video: the picture is too big")
+	}
+	if count > maxFrames {
+		return nil, nil, errors.New("video: too many frames")
+	}
+	if s.fps < minFPS || s.fps > maxFPS {
+		return nil, nil, errors.New("video: the frame rate is out of range")
+	}
+	if s.w == 0 || s.h == 0 || (s.symbols == nil && s.h%2 != 0) || s.keyEvery == 0 || count == 0 || len(data) < head+count*n {
 		return nil, nil, errors.New("video: damaged file")
 	}
 	for i := range np {

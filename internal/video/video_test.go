@@ -179,3 +179,64 @@ func TestDamaged(t *testing.T) {
 		}
 	}
 }
+
+func TestLimits(t *testing.T) {
+	pal := []art.RGB{{}}
+	frames := func(n, size int) [][]byte {
+		out := make([][]byte, n)
+		for i := range out {
+			out[i] = make([]byte, size)
+		}
+		return out
+	}
+	fps := func(hundredths uint16, s []byte) []byte {
+		s = bytes.Clone(s)
+		binary.LittleEndian.PutUint16(s[8:], hundredths)
+		return s
+	}
+	member := func(level int, data []byte) []byte {
+		var b bytes.Buffer
+		z, _ := gzip.NewWriterLevel(&b, level)
+		z.Write(data)
+		z.Close()
+		return b.Bytes()
+	}
+	big := func(level, n int) []byte {
+		out := member(level, stream(512, 512, pal, "", 1, frames(n, 0)...))
+		return append(out, bytes.Repeat(member(level, make([]byte, 512*512)), n)...)
+	}
+	small := stream(1, 2, pal, "", 1, make([]byte, 2))
+	ok := map[string][]byte{
+		"widest and tallest":          zip(stream(512, 512, pal, "", 1, make([]byte, 512*512))),
+		"widest and tallest, symbols": zip(stream(512, 256, pal, " ", 1, make([]byte, 512*256*2))),
+		"most frames":                 zip(stream(1, 2, pal, "", 100, frames(20000, 2)...)),
+		"most frames in scenes":       zip(stream(1, 2, pal, "", 100, frames(10000, 2)...), stream(1, 2, pal, "", 100, frames(10000, 2)...)),
+		"slowest":                     zip(fps(100, small)),
+		"fastest":                     zip(fps(12000, small)),
+		"biggest file":                big(gzip.NoCompression, 255),
+	}
+	for name, data := range ok {
+		if _, err := Read(data); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	bad := map[string][]byte{
+		"too wide":           zip(stream(513, 2, pal, "", 1, make([]byte, 513*2))),
+		"too tall":           zip(stream(1, 514, pal, "", 1, make([]byte, 514))),
+		"too tall, symbols":  zip(stream(1, 257, pal, " ", 1, make([]byte, 257*2))),
+		"too many frames":    zip(stream(1, 2, pal, "", 100, frames(20001, 2)...)),
+		"too many in scenes": zip(stream(1, 2, pal, "", 100, frames(10001, 2)...), stream(1, 2, pal, "", 100, frames(10000, 2)...)),
+		"huge frame count":   zip(append(stream(1, 2, pal, "", 1)[:10:10], 0xff, 0xff, 0xff, 0xff, 1, 0, 1, 0, 0, 0, 0)),
+		"no frame rate":      zip(fps(0, small)),
+		"too slow":           zip(fps(99, small)),
+		"too fast":           zip(fps(12001, small)),
+		"no height":          zip(stream(2, 0, pal, "", 1, nil)),
+		"file too big":       big(gzip.NoCompression, 257),
+		"decodes too big":    big(gzip.BestSpeed, 1025),
+	}
+	for name, data := range bad {
+		if _, err := Read(data); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}

@@ -1,9 +1,9 @@
 package ui
 
 import (
-	"os"
+	"io"
+	"io/fs"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -29,6 +29,7 @@ type sound interface {
 	Rewind()
 	Playing() bool
 	Position() time.Duration
+	Err() error
 }
 
 // interviewOf loads the interview of spotlight i once: NAME.zkv and NAME.mp3, NAME being the
@@ -38,17 +39,50 @@ func (m *Model) interviewOf(i int) *interview {
 		return c
 	}
 	var c *interview
-	if s := m.opts.Site.Spotlights; m.opts.Media != "" && i < len(s) && s[i].Video != "" {
-		name := filepath.Join(m.opts.Media, strings.TrimSuffix(path.Base(s[i].Video), path.Ext(s[i].Video)))
-		if data, err := os.ReadFile(name + ".zkv"); err == nil {
+	if s := m.opts.Site.Spotlights; i < len(s) && s[i].Video != "" {
+		name := strings.TrimSuffix(path.Base(s[i].Video), path.Ext(s[i].Video))
+		if data, err := readMedia(m.opts.Media, name+".zkv"); err == nil {
 			if v, err := video.Read(data); err == nil {
 				c = &interview{video: v}
-				c.mp3, _ = os.ReadFile(name + ".mp3")
+				c.mp3, _ = readMedia(m.opts.Media, name+".mp3")
 			}
 		}
 	}
 	m.interviews[i] = c
 	return c
+}
+
+const mediaLimit = 64 << 20
+
+func readMedia(media fs.FS, name string) ([]byte, error) {
+	if media == nil {
+		return nil, fs.ErrNotExist
+	}
+	f, err := media.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() || st.Size() > mediaLimit {
+		return nil, fs.ErrInvalid
+	}
+	data := make([]byte, st.Size())
+	if _, err := io.ReadFull(f, data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func isMedia(media fs.FS, name string) bool {
+	if media == nil {
+		return false
+	}
+	st, err := fs.Stat(media, name)
+	return err == nil && st.Mode().IsRegular() && st.Size() <= mediaLimit
 }
 
 type watchState int
@@ -70,6 +104,7 @@ type watch struct {
 	base   time.Duration
 	synced bool // the sound has reached the speakers, so the clock follows it
 	gen    int  // ticks of an earlier run are dropped
+	held   bool
 }
 
 // drift is how far the clock may stray from the sound before it jumps to it; smaller
@@ -122,9 +157,17 @@ func (m *Model) playWatch(c *interview) tea.Cmd {
 	if w.state == watchStopped {
 		w.at = 0
 	}
-	w.state, w.base, w.t0, w.synced = watchPlaying, w.at, time.Now(), false
+	if m.playerSmall(c) {
+		w.state, w.held = watchPaused, true
+		w.gen++
+		return nil
+	}
+	w.state, w.base, w.t0, w.synced, w.held = watchPlaying, w.at, time.Now(), false, false
 	w.gen++
 	cmds := []tea.Cmd{m.watchTick()}
+	if c.sound == nil && c.mp3 != nil && !c.loading && c.soundErr == nil {
+		c.soundErr = audio.Err()
+	}
 	switch {
 	case c.sound != nil:
 		c.sound.Play()
@@ -164,8 +207,28 @@ func (m *Model) stopWatch() {
 	if c := m.interviewOf(w.spot); c != nil && c.sound != nil {
 		c.sound.Rewind()
 	}
-	w.state, w.at = watchStopped, 0
+	w.state, w.at, w.held = watchStopped, 0, false
 	w.gen++
+}
+
+func (m *Model) fitPlayer() tea.Cmd {
+	w := &m.watch
+	if !m.playerOpen() || w.spot != m.spot {
+		return nil
+	}
+	c := m.interviewOf(m.spot)
+	if c == nil {
+		return nil
+	}
+	small := m.playerSmall(c)
+	switch {
+	case small && w.state == watchPlaying:
+		m.pauseWatch()
+		w.held = true
+	case !small && w.held:
+		return m.playWatch(c)
+	}
+	return nil
 }
 
 // watching is the playback state of spotlight i.
@@ -218,6 +281,15 @@ func (m *Model) watchTick() tea.Cmd {
 func (m *Model) clock(now time.Time) time.Duration {
 	w := &m.watch
 	c := m.interviewOf(w.spot)
+	if w.state == watchPlaying && c.sound != nil {
+		if err := c.sound.Err(); err != nil {
+			if w.synced {
+				w.base += now.Sub(w.t0)
+			}
+			c.sound.Pause()
+			c.sound, c.soundErr, w.synced, w.t0 = nil, err, false, now
+		}
+	}
 	switch {
 	case w.state != watchPlaying:
 		return w.at
@@ -271,10 +343,12 @@ func (m *Model) player(i int, c *interview) []line {
 // playerKeys is the player's keys for its state, after the one that closes it.
 func (m *Model) playerKeys(i int) line {
 	pairs := []string{"esc", "close", "p", "play"}
-	switch state, _ := m.watching(i); state {
-	case watchPlaying:
+	switch state, _ := m.watching(i); {
+	case m.watch.held && m.watch.spot == i:
+		pairs = pairs[:2]
+	case state == watchPlaying:
 		pairs = []string{"esc", "close", "p", "pause", "s", "stop"}
-	case watchPaused:
+	case state == watchPaused:
 		pairs = []string{"esc", "close", "p", "resume", "s", "stop"}
 	}
 	return m.hints(pairs...)
@@ -284,7 +358,7 @@ func (m *Model) playerKeys(i int) line {
 func (m *Model) playerTime(i int, c *interview) string {
 	_, at := m.watching(i)
 	t := mmss(at) + " / " + mmss(c.video.Duration())
-	if c.soundErr != nil || c.mp3 == nil {
+	if c.soundErr != nil || c.mp3 == nil || audio.Err() != nil {
 		t = "no sound · " + t
 	}
 	return t
