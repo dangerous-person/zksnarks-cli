@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"math"
 	"sort"
 	"time"
 
@@ -190,7 +189,7 @@ func (m *Model) applySnapshot(s *market.Snapshot) {
 		if lt.ListedAt != nil {
 			t.ListedAt = *lt.ListedAt
 		}
-		if lt.Rank != nil {
+		if lt.Rank != nil && *lt.Rank >= 0 && *lt.Rank <= m.opts.Atlas.Meta.Minted {
 			t.Rank = *lt.Rank
 		}
 		if lt.Img != "" && lt.Img != m.opts.Atlas.Tokens[i].Img {
@@ -292,11 +291,17 @@ func (m *Model) marketParts() []line {
 	if m.floor > 0 {
 		parts = append(parts, part("floor ", zecFloat(m.floor)+" ZEC"))
 	}
-	if m.stats != nil {
-		parts = append(parts, part("24h: ", itoa(m.stats.Sales24h), " sales, ", zecShort(string(m.stats.Volume24h))+" ZEC"))
+	if s := m.stats; s != nil {
+		if v := zecShort(string(s.Volume24h)); v != "" {
+			parts = append(parts, part("24h: ", itoa(s.Sales24h), " sales, ", v+" ZEC"))
+		} else {
+			parts = append(parts, part("24h: ", itoa(s.Sales24h), " sales"))
+		}
 	}
 	if m.rate != nil && m.rate.ZecUsd > 0 {
-		parts = append(parts, part("1 ZEC = ", usd(m.rate.ZecUsd)))
+		if v := usd(m.rate.ZecUsd); v != "" {
+			parts = append(parts, part("1 ZEC = ", v))
+		}
 	}
 	return parts
 }
@@ -304,7 +309,7 @@ func (m *Model) marketParts() []line {
 func zecShort(s string) string {
 	p, ok := search.Price(s)
 	if !ok {
-		return s
+		return ""
 	}
 	return trimFloat(p)
 }
@@ -344,7 +349,9 @@ func (m *Model) worksText() string {
 func (m *Model) volumeText() string {
 	if s := m.stats; s != nil {
 		if v, ok := search.Price(string(s.VolumeTotal)); ok {
-			return comma(int(math.Round(v))) + " ZEC"
+			if n, ok := roundInt(v); ok {
+				return comma(n) + " ZEC"
+			}
 		}
 	}
 	return ""

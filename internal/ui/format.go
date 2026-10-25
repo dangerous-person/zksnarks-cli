@@ -12,14 +12,21 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 // comma writes an integer with thousands separators.
 func comma(n int) string {
-	s := strconv.Itoa(n)
-	if n < 0 {
-		return "-" + comma(-n)
+	s, sign := strconv.FormatInt(int64(n), 10), ""
+	if s[0] == '-' {
+		s, sign = s[1:], "-"
 	}
 	for i := len(s) - 3; i > 0; i -= 3 {
 		s = s[:i] + "," + s[i:]
 	}
-	return s
+	return sign + s
+}
+
+func roundInt(v float64) (int, bool) {
+	if math.IsNaN(v) || math.Abs(v) > 1e15 {
+		return 0, false
+	}
+	return int(math.Round(v)), true
 }
 
 // zec formats an amount the way the API wrote it, with at least two decimals.
@@ -41,7 +48,11 @@ func zecFloat(f float64) string {
 }
 
 func usd(f float64) string {
-	return "$" + comma(int(math.Round(f)))
+	n, ok := roundInt(f)
+	if !ok {
+		return ""
+	}
+	return "$" + comma(n)
 }
 
 func percent(n, total int) string {

@@ -287,7 +287,9 @@ func (m *Model) traitGrid(t *atlas.Token, w int) []line {
 // usdText is a ZEC amount in dollars at the live rate, or nothing without one.
 func (m *Model) usdText(amount string) string {
 	if p, ok := search.Price(amount); ok && m.rate != nil {
-		return "≈ " + usd(p*m.rate.ZecUsd)
+		if s := usd(p * m.rate.ZecUsd); s != "" {
+			return "≈ " + s
+		}
 	}
 	return ""
 }
@@ -319,8 +321,11 @@ func percent2(n, total int) string {
 }
 
 func trimFloat(f float64) string {
-	s := zecFloat(float64(int(f*100+0.5)) / 100)
-	return s
+	n, ok := roundInt(f * 100)
+	if !ok {
+		return ""
+	}
+	return zecFloat(float64(n) / 100)
 }
 
 // rankSection fills the grid's sixth section: the rank out of all minted tokens and, where
@@ -342,9 +347,11 @@ func (m *Model) rankSection(r *row, t *atlas.Token, k, x0, inner int) {
 			of = "of " + comma(m.opts.Atlas.Meta.Minted)
 			r.put(fg(m.theme.Dim), of)
 		}
-		if sc := "score " + trimFloat(t.Score); t.Score > 0 && width(of)+1+width(sc) <= inner {
-			r.padTo(x0 + 1 + inner - width(sc))
-			r.put(fg(m.theme.Dim), sc)
+		if s := trimFloat(t.Score); t.Score > 0 && s != "" {
+			if sc := "score " + s; width(of)+1+width(sc) <= inner {
+				r.padTo(x0 + 1 + inner - width(sc))
+				r.put(fg(m.theme.Dim), sc)
+			}
 		}
 	}
 }

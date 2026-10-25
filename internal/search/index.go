@@ -1,6 +1,7 @@
 package search
 
 import (
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -71,11 +72,11 @@ func NewIndex(tokens []atlas.Token) *Index {
 
 // Price parses a ZEC amount as the API writes it; ok is false for an empty amount.
 func Price(s string) (float64, bool) {
-	if s == "" {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0, false
 	}
-	f, err := strconv.ParseFloat(s, 64)
-	return f, err == nil
+	return f, true
 }
 
 func (ix *Index) match(i int, t *atlas.Token, term *Term) bool {
