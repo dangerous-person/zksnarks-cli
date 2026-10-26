@@ -126,6 +126,9 @@ func Parse(s string, cat *Catalogue) Query {
 	q := Query{Sort: Sort{Field: "number"}}
 	for _, raw := range split(s) {
 		low := strings.ToLower(raw)
+		if pendingTerm(low) {
+			continue
+		}
 		switch {
 		case strings.HasPrefix(low, "sort:"):
 			f := strings.TrimPrefix(low, "sort:")

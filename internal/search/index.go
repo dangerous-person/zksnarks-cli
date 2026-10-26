@@ -289,21 +289,30 @@ type Suggestion struct {
 	Value string // catalogue spelling
 	Count int    // results that have this value
 	Jump  int    // a token number to jump to instead, 0 for a value
+	Term  string
+	Note  string
 }
 
 // Text is the term that replaces the unfinished one.
 func (s Suggestion) Text() string {
+	if s.Term != "" {
+		return s.Term
+	}
 	if s.Jump != 0 {
 		return "#" + strconv.Itoa(s.Jump)
 	}
 	return traitText(s.Key, []string{s.Value})
 }
 
-// Suggest offers completions for the last term of the input while it is being typed: trait
-// values with a word starting with it (counted among results) and, for a number, a jump to
-// that token. Background is left out: every token has the same one.
-func (ix *Index) Suggest(input string, results []int, tokens []atlas.Token, limit int) []Suggestion {
-	if input == "" || strings.HasSuffix(input, " ") {
+// Suggest offers completions for the last term of the input while it is being typed: for a
+// number, a jump to that token; statuses, keys, comparisons and sorts that start with it; and
+// trait values with a word starting with it (counted among results). An empty input gets the
+// main keys and keywords. Background is left out: every token has the same one.
+func (ix *Index) Suggest(input string, results []int, tokens []atlas.Token) []Suggestion {
+	if input == "" {
+		return ix.starters(results, tokens)
+	}
+	if strings.HasSuffix(input, " ") {
 		return nil
 	}
 	parts := split(input)
@@ -311,7 +320,11 @@ func (ix *Index) Suggest(input string, results []int, tokens []atlas.Token, limi
 	low := strings.ToLower(last)
 	keys := []int{0, 1, 2, 3, 4}
 	prefix := low
+	var words []Suggestion
 	if key, val, ok := strings.Cut(low, ":"); ok {
+		if key == "sort" {
+			return sorts(val)
+		}
 		k, known := traitKeys[key]
 		if !known {
 			return nil
@@ -322,11 +335,14 @@ func (ix *Index) Suggest(input string, results []int, tokens []atlas.Token, limi
 		}
 	} else if strings.HasPrefix(low, "#") || strings.ContainsAny(low, "<>=\"") || statuses[low] {
 		return nil
+	} else {
+		words = ix.keywords(low, Parse(strings.Join(parts[:len(parts)-1], " "), ix.Cat), tokens)
 	}
 	var out []Suggestion
 	if n, err := strconv.Atoi(prefix); err == nil && n >= 1 && n <= len(tokens) && len(keys) > 1 {
 		out = append(out, Suggestion{Jump: n})
 	}
+	out = append(out, words...)
 	type kv struct {
 		k int
 		v string
@@ -365,11 +381,7 @@ func (ix *Index) Suggest(input string, results []int, tokens []atlas.Token, limi
 		}
 		return vals[a].Value < vals[b].Value
 	})
-	out = append(out, vals...)
-	if len(out) > limit {
-		out = out[:limit]
-	}
-	return out
+	return append(out, vals...)
 }
 
 // wordPrefix reports whether the phrase starts at a word of the value.
@@ -399,10 +411,14 @@ func wordPrefix(words []string, phrase string) bool {
 
 // Complete replaces the last term of the input with the suggestion.
 func Complete(input string, s Suggestion) string {
+	end := " "
+	if s.open() {
+		end = ""
+	}
 	parts := split(input)
 	if len(parts) == 0 {
-		return s.Text() + " "
+		return s.Text() + end
 	}
 	parts[len(parts)-1] = s.Text()
-	return strings.Join(parts, " ") + " "
+	return strings.Join(parts, " ") + end
 }

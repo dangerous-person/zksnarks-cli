@@ -242,12 +242,7 @@ func (p *panel) detail(m *Model) string {
 	case pr.heading != "":
 		return ""
 	case pr.status != "":
-		return map[string]string{
-			"listed":     "has an ask price",
-			"apparition": "one of the apparitions",
-			"auction":    "on auction now",
-			"purged":     "purged, hidden by default",
-		}[pr.status]
+		return search.StatusNote(pr.status)
 	}
 	s := percent(m.ix.Cat.Counts[pr.key][pr.value], m.opts.Atlas.Meta.Supply) + " of supply"
 	if f, ok := m.floors[pr.key][pr.value]; ok {

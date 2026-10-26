@@ -150,7 +150,7 @@ func (m *Model) listLines(w, h int) []line {
 	if m.panel.open {
 		ox += panelW + 2
 	}
-	info := m.previewInfo(t, previewW, h-len(artLines), ox, m.headRows()+m.suggestionLines()+len(artLines))
+	info := m.previewInfo(t, previewW, h-len(artLines), ox, m.headRows()+len(artLines))
 	for y := 0; y < h; y++ {
 		var r row
 		r.cells(out[y].s, out[y].w)

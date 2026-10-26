@@ -25,6 +25,9 @@ const (
 	slotGap    = 2
 	pitch      = art.ThumbH + 2 // gap line, 13 art lines, label
 	wheelLines = 2
+	suggRows   = 6
+	suggW      = 44
+	suggX      = 4
 )
 
 type mode int
@@ -110,7 +113,10 @@ type Model struct {
 	sel       int   // index into results
 	scroll    int   // gallery: first visible line; list: first visible row
 	sugg      []search.Suggestion
-	suggSel   int // -1: none highlighted
+	suggSel   int
+	suggTop   int
+	suggFor   string
+	suggMoved bool
 	facets    *[6]map[string]int
 	statusCnt map[string]int
 	panel     panel
@@ -174,7 +180,6 @@ func New(o Options) *Model {
 		quant:      term.NewQuantiser(o.Color),
 		mode:       modeList,
 		shimmerAt:  -1,
-		suggSel:    -1,
 	}
 	m.lastEvent, _ = parseTime(o.Atlas.Meta.SnapshotAt)
 	for i, t := range m.tokens {
@@ -246,10 +251,52 @@ func (m *Model) refresh(keep bool) {
 }
 
 func (m *Model) updateSuggestions() {
-	m.sugg, m.suggSel = nil, -1
-	if m.focus == focusQuery && m.input.pos == len(m.input.r) {
-		m.sugg = m.ix.Suggest(m.input.text, m.results, m.tokens, 6)
+	keep, top, moved := "", m.suggTop, m.suggMoved
+	if m.suggFor == m.input.text && m.suggSel < len(m.sugg) {
+		keep = m.sugg[m.suggSel].Text()
 	}
+	m.sugg, m.suggSel, m.suggTop, m.suggFor, m.suggMoved = nil, 0, 0, m.input.text, false
+	if m.focus == focusQuery && m.input.pos == len(m.input.r) {
+		m.sugg = m.ix.Suggest(m.input.text, m.results, m.tokens)
+	}
+	for i, s := range m.sugg {
+		if keep != "" && s.Text() == keep {
+			m.suggTop = top
+			m.pickSuggestion(i)
+			m.suggMoved = moved
+			break
+		}
+	}
+}
+
+func (m *Model) pickSuggestion(i int) {
+	m.suggSel = max(0, min(i, len(m.sugg)-1))
+	m.suggTop = max(m.suggSel-suggRows+1, min(m.suggTop, m.suggSel))
+	m.suggMoved = len(m.sugg) > 0
+}
+
+func (m *Model) scrollSuggestions(d int) {
+	m.suggTop = max(0, min(m.suggTop+d, len(m.sugg)-suggRows))
+	m.suggSel = max(m.suggTop, min(m.suggSel, m.suggTop+suggRows-1))
+	m.suggMoved = true
+}
+
+func (m *Model) enterCompletes() bool {
+	if len(m.sugg) == 0 {
+		return false
+	}
+	s := m.sugg[m.suggSel]
+	parts := strings.Fields(m.input.text)
+	return m.suggMoved || len(parts) == 0 || s.Term != "" || s.Jump != 0 || strings.Contains(parts[len(parts)-1], ":")
+}
+
+func (m *Model) complete(s search.Suggestion) tea.Cmd {
+	if s.Jump != 0 {
+		return m.jump(s.Jump)
+	}
+	m.input.set(search.Complete(m.input.text, s))
+	m.refresh(true)
+	return nil
 }
 
 func (m *Model) selected() (*atlas.Token, bool) {
@@ -488,6 +535,12 @@ func (m *Model) setSection(s int) tea.Cmd {
 	return shimmer
 }
 
+func (m *Model) leaveQuery() {
+	m.focus = focusMain
+	m.sugg = nil
+	m.input.set(strings.TrimSpace(m.input.text))
+}
+
 func (m *Model) focusQuery() {
 	m.focus = focusQuery
 	m.inputWas = m.input.text
@@ -507,18 +560,14 @@ func (m *Model) cycleTheme() {
 func (m *Model) queryKey(msg tea.KeyPressMsg, k string) tea.Cmd {
 	switch k {
 	case "?":
-		m.focus = focusMain
-		m.sugg = nil
-		m.input.set(strings.TrimSpace(m.input.text))
+		m.leaveQuery()
 		m.helpOpen, m.helpTop = true, 0
 		return nil
 	case "enter":
-		if m.suggSel >= 0 && m.suggSel < len(m.sugg) && m.sugg[m.suggSel].Jump != 0 {
-			return m.jump(m.sugg[m.suggSel].Jump)
+		if m.enterCompletes() {
+			return m.complete(m.sugg[m.suggSel])
 		}
-		m.focus = focusMain
-		m.sugg = nil
-		m.input.set(strings.TrimSpace(m.input.text))
+		m.leaveQuery()
 		return nil
 	case "esc":
 		m.focus = focusMain
@@ -527,23 +576,20 @@ func (m *Model) queryKey(msg tea.KeyPressMsg, k string) tea.Cmd {
 		return nil
 	case "tab":
 		if len(m.sugg) > 0 {
-			s := m.sugg[max(0, m.suggSel)]
-			if s.Jump != 0 {
-				return m.jump(s.Jump)
-			}
-			m.input.set(search.Complete(m.input.text, s))
-			m.refresh(true)
+			return m.complete(m.sugg[m.suggSel])
 		}
 		return nil
 	case "down", "ctrl+n":
-		if len(m.sugg) > 0 {
-			m.suggSel = min(m.suggSel+1, len(m.sugg)-1)
-		}
+		m.pickSuggestion(m.suggSel + 1)
 		return nil
 	case "up", "ctrl+p":
-		if m.suggSel >= 0 {
-			m.suggSel--
-		}
+		m.pickSuggestion(m.suggSel - 1)
+		return nil
+	case "pgdown":
+		m.pickSuggestion(m.suggSel + suggRows)
+		return nil
+	case "pgup":
+		m.pickSuggestion(m.suggSel - suggRows)
 		return nil
 	}
 	if m.input.key(msg) {
@@ -728,6 +774,15 @@ func (m *Model) wheel(ms tea.Mouse) {
 		}
 		return
 	}
+	if m.inSuggestions(ms.X, ms.Y) {
+		switch ms.Button {
+		case tea.MouseWheelUp:
+			m.scrollSuggestions(-1)
+		case tea.MouseWheelDown:
+			m.scrollSuggestions(1)
+		}
+		return
+	}
 	if m.panel.open && ms.X < panelW+2 && !m.card {
 		m.panel.wheel(m, ms.Button)
 		return
@@ -767,6 +822,9 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 		items := m.navLayout()
 		for _, it := range items {
 			if ms.X >= it.x0 && ms.X < it.x1 {
+				if it.sec == m.section && m.focus == focusQuery {
+					m.leaveQuery()
+				}
 				return m.setSection(it.sec)
 			}
 		}
@@ -796,6 +854,13 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 		}
 		return m.clickKey(ms)
 	}
+	if m.inSuggestions(ms.X, ms.Y) {
+		i := m.suggTop + ms.Y - m.headRows() - 1
+		if x0 := m.suggX(); ms.X > x0 && ms.X < x0+suggW-1 && i >= m.suggTop && i < min(len(m.sugg), m.suggTop+suggRows) {
+			return m.complete(m.sugg[i])
+		}
+		return nil
+	}
 	if ms.Y == 3 && !m.card {
 		if m.clearKey.contains(ms.X, ms.Y) {
 			m.input.set("")
@@ -804,6 +869,9 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 		}
 		m.focusQuery()
 		return nil
+	}
+	if m.focus == focusQuery {
+		m.leaveQuery()
 	}
 	if m.card {
 		return m.clickKey(ms)
@@ -815,7 +883,7 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 			}
 		}
 	}
-	top := m.headRows() + m.suggestionLines()
+	top := m.headRows()
 	y, x := ms.Y-top, ms.X-2
 	if y < 0 || y >= m.viewH()+boolInt(m.mode == modeList) || x < 0 {
 		return nil

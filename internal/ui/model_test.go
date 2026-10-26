@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/dangerous-person/zksnarks-cli/internal/search"
 )
 
 func openZilkroad(m *Model, grid bool) {
@@ -111,6 +113,93 @@ func TestPaste(t *testing.T) {
 	}
 }
 
+func TestSuggestionStarters(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	if len(m.sugg) == 0 || m.sugg[0].Term != "lineage:" || !strings.Contains(plainView(m)[m.headRows()+1], "› lineage:     22 values") {
+		t.Fatalf("starters: %+v", m.sugg)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.input.text != "lineage:" || len(m.sugg) != 22 || m.sugg[0].Key != 0 || len(m.q.Errs) != 0 {
+		t.Fatalf("after tab: %q, %d suggestions, %v", m.input.text, len(m.sugg), m.q.Errs)
+	}
+	m.input.set("")
+	typeText(m, "so")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.input.text != "sort:" || len(m.sugg) != 6 || len(m.q.Errs) != 0 {
+		t.Fatalf("sort: %q, %d suggestions, %v", m.input.text, len(m.sugg), m.q.Errs)
+	}
+	m.input.set("")
+	typeText(m, "skin:")
+	first := m.sugg[0]
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if want := search.Complete("skin:", first); m.input.text != want || m.focus != focusQuery || len(m.sugg) != 0 {
+		t.Fatalf("enter: %q, want %q, focus %v", m.input.text, want, m.focus)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.focus != focusMain {
+		t.Fatalf("second enter: focus %v", m.focus)
+	}
+}
+
+func TestSuggestionsScroll(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	typeText(m, "skin:")
+	n := len(m.sugg)
+	if n <= suggRows || m.suggestionLines() != suggRows+2 {
+		t.Fatalf("%d suggestions, %d lines", n, m.suggestionLines())
+	}
+	top := m.headRows()
+	if m.suggSel != 0 || !strings.Contains(plainView(m)[top+1], "› "+m.sugg[0].Value) {
+		t.Fatalf("first suggestion not picked: sel %d", m.suggSel)
+	}
+	for range 8 {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	box := plainView(m)[top : top+suggRows+2]
+	if m.suggSel != 8 || m.suggTop != 3 || !strings.Contains(box[suggRows], "› "+m.sugg[8].Value) || !strings.Contains(box[suggRows+1], "─ 9 of "+itoa(n)+" ─╯") {
+		t.Fatalf("sel %d, top %d, box:\n%s", m.suggSel, m.suggTop, strings.Join(box, "\n"))
+	}
+	picked := m.sugg[m.suggSel].Text()
+	m.refresh(true)
+	if m.suggSel != 8 || m.suggTop != 3 || m.sugg[m.suggSel].Text() != picked {
+		t.Fatalf("refresh moved the pick: sel %d, top %d", m.suggSel, m.suggTop)
+	}
+	m.Update(tea.MouseWheelMsg{X: 20, Y: top + 2, Button: tea.MouseWheelDown})
+	if m.suggTop != 4 || m.suggSel != 8 {
+		t.Fatalf("one wheel step: sel %d, top %d", m.suggSel, m.suggTop)
+	}
+	for range n {
+		m.Update(tea.MouseWheelMsg{X: 20, Y: top + 2, Button: tea.MouseWheelDown})
+	}
+	if m.suggTop != n-suggRows || m.suggSel != n-suggRows {
+		t.Fatalf("wheel to the end: sel %d, top %d", m.suggSel, m.suggTop)
+	}
+	scroll := m.scroll
+	m.Update(tea.MouseWheelMsg{X: 20, Y: top + suggRows + 5, Button: tea.MouseWheelDown})
+	if m.scroll == scroll || m.suggTop != n-suggRows {
+		t.Fatalf("wheel under the box: scroll %d, top %d", m.scroll, m.suggTop)
+	}
+	last := m.sugg[n-1]
+	m.Update(tea.MouseClickMsg{X: 10, Y: top + suggRows, Button: tea.MouseLeft})
+	if want := search.Complete("skin:", last); m.input.text != want || m.focus != focusQuery {
+		t.Fatalf("click: %q, want %q", m.input.text, want)
+	}
+	m.input.set("")
+	typeText(m, "skin:")
+	for range 3 {
+		m.Update(tea.MouseWheelMsg{X: 20, Y: top + 2, Button: tea.MouseWheelDown})
+	}
+	third := m.sugg[3]
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if want := search.Complete("skin:", third); m.input.text != want {
+		t.Fatalf("tab after the wheel: %q, want %q", m.input.text, want)
+	}
+}
+
 func TestNavClickReleasesSearch(t *testing.T) {
 	m := colourModel(t, Options{})
 	m.Update(tea.KeyPressMsg{Code: '1', Text: "1"})
@@ -148,4 +237,77 @@ func quits(cmd tea.Cmd) bool {
 		}
 	}
 	return false
+}
+
+func TestClickLeavesSearch(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	typeText(m, "skin:")
+	row := m.headRows() + suggRows + 4
+	m.Update(tea.MouseClickMsg{X: 8, Y: row, Button: tea.MouseLeft})
+	if m.focus != focusMain || m.sugg != nil || m.input.text != "skin:" {
+		t.Fatalf("click on a row: focus %v, %d suggestions, %q", m.focus, len(m.sugg), m.input.text)
+	}
+	sel := m.sel
+	m.Update(tea.MouseClickMsg{X: 8, Y: row, Button: tea.MouseLeft})
+	if !m.card || m.sel != sel || m.focus != focusMain {
+		t.Fatalf("second click: card %v, sel %d (was %d), focus %v", m.card, m.sel, sel, m.focus)
+	}
+	m.card = false
+	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	for _, it := range m.navLayout() {
+		if it.sec == secZilkroad {
+			m.Update(tea.MouseClickMsg{X: it.x0 + 1, Y: 1, Button: tea.MouseLeft})
+		}
+	}
+	if m.focus != focusMain || m.sugg != nil {
+		t.Fatalf("active tab click: focus %v, %d suggestions", m.focus, len(m.sugg))
+	}
+}
+
+func TestEnterSearchesBareWords(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	enter := func(typed string, down int) {
+		m.focus, m.card = focusMain, false
+		m.input.set("")
+		m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+		typeText(m, typed)
+		for range down {
+			m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		}
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
+	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	typeText(m, "rim")
+	if v := plainView(m); !strings.Contains(v[len(v)-1], "[ENTER] DONE  [TAB] COMPLETE") {
+		t.Fatalf("footer for a bare word: %q", v[len(v)-1])
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	cases := []struct {
+		typed string
+		down  int
+		want  string
+		focus focus
+	}{
+		{"rim", 0, "rim", focusMain},
+		{"ski", 0, "skin:", focusQuery},
+		{"skin:", 0, `skin:Earthtone `, focusQuery},
+		{"", 0, "lineage:", focusQuery},
+	}
+	for _, c := range cases {
+		enter(c.typed, c.down)
+		if m.input.text != c.want || m.focus != c.focus {
+			t.Errorf("%q: %q, focus %v", c.typed, m.input.text, m.focus)
+		}
+	}
+	enter("rim", 1)
+	if !strings.HasPrefix(m.input.text, "eyes:") || m.focus != focusQuery {
+		t.Errorf("rim after a pick: %q", m.input.text)
+	}
+	enter("4", 0)
+	if !m.card || m.tokens[m.results[m.sel]].ID != 4 {
+		t.Errorf("4 + enter: card %v", m.card)
+	}
 }

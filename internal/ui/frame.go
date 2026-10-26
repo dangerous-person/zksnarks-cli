@@ -74,17 +74,18 @@ func (m *Model) view() tea.View {
 		return v
 	}
 	out, cursorX := m.frameLines()
-	if m.overlay() || m.playerOpen() || m.helpShown() {
+	if m.overlay() || m.playerOpen() || m.helpShown() || len(m.sugg) > 0 {
 		cv := newCanvas(m.w, m.h)
 		for y, l := range out {
 			cv.draw(0, y, l)
 		}
+		m.drawSuggestions(cv)
 		switch {
 		case m.helpShown():
 			m.drawHelp(cv)
 		case m.overlay():
 			m.drawCard(cv)
-		default:
+		case m.playerOpen():
 			m.drawPlayer(cv)
 		}
 		v.Content = cv.String()
@@ -106,20 +107,14 @@ func (m *Model) frameLines() ([]string, int) {
 		out = append(out, m.side(ql, false, false), m.separator())
 		cursorX = cx
 	}
-	main, bar := m.body()
-	body := main
-	skip := 0
-	if m.section == secZilkroad {
-		body = append(m.suggestionBox(), main...)
-		skip = m.suggestionLines()
-	}
+	body, bar := m.body()
 	n := m.h - m.footRows() - len(out)
 	for i := range n {
 		var l line
 		if i < len(body) {
 			l = body[i]
 		}
-		thumb := bar != nil && i < len(body) && i >= skip && bar(i-skip)
+		thumb := bar != nil && i < len(body) && bar(i)
 		out = append(out, m.side(l, thumb, i == n-1 && !m.showMarket()))
 	}
 	out = out[:m.h-m.footRows()]
@@ -144,11 +139,7 @@ func (m *Model) hedge(left, right string) string {
 }
 
 func (m *Model) bodyH() int {
-	h := m.h - m.headRows() - m.footRows()
-	if m.section == secZilkroad {
-		h -= m.suggestionLines()
-	}
-	return max(1, h)
+	return max(1, m.h-m.headRows()-m.footRows())
 }
 
 // body returns the current section's content and, when it scrolls, a scrollbar test.
@@ -336,7 +327,19 @@ func (m *Model) hintsRow() string {
 func (m *Model) footerHints() []line {
 	switch {
 	case m.focus == focusQuery:
-		return []line{m.hints("enter", "done", "tab", "complete", "↑↓", "pick", "esc", "cancel"), m.hints("enter", "done", "tab", "complete", "esc", "cancel")}
+		var keys []string
+		if m.enterCompletes() {
+			keys = []string{"enter", "complete"}
+		} else {
+			keys = []string{"enter", "done"}
+			if len(m.sugg) > 0 {
+				keys = append(keys, "tab", "complete")
+			}
+		}
+		if len(m.sugg) > 1 {
+			return []line{m.hints(append(keys, "↑↓", "pick", "esc", "cancel")...), m.hints(append(keys, "esc", "cancel")...)}
+		}
+		return []line{m.hints(append(keys, "esc", "cancel")...)}
 	case m.helpShown():
 		return []line{m.hints("/", "search", "esc", "close")}
 	case m.focus == focusFilters:

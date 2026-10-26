@@ -2,6 +2,7 @@ package search
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas"
@@ -131,25 +132,79 @@ func TestFacets(t *testing.T) {
 	}
 }
 
+func texts(ss []Suggestion) string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = s.Text()
+	}
+	return strings.Join(out, " ")
+}
+
+func TestSuggestKeywords(t *testing.T) {
+	ts := fixture()
+	ix := NewIndex(ts)
+	all := ix.Run(Parse("", ix.Cat), ts)
+	got := ix.Suggest("", all, ts)
+	if s := texts(got); s != "lineage: skin: eyes: head: listed price< rank< sort: # apparition" {
+		t.Fatalf("starters: %s", s)
+	}
+	if got[0].Note != "4 values" || got[4].Count != 3 || got[9].Count != 1 {
+		t.Fatalf("starter notes: %+v", got)
+	}
+	cases := []struct{ in, want string }{
+		{"pr", "price< sort:price"},
+		{"li", "listed lineage:"},
+		{"listed li", "lineage:"},
+		{"sort:-", "sort:-price sort:-rank"},
+		{"sk", "skin: lineage:Skele"},
+	}
+	for _, c := range cases {
+		res := ix.Run(Parse(c.in, ix.Cat), ts)
+		if s := texts(ix.Suggest(c.in, res, ts)); s != c.want {
+			t.Errorf("%q: %s, want %s", c.in, s, c.want)
+		}
+	}
+	if got := ix.Suggest("listed li", nil, ts); got[0].Note != "2 values" {
+		t.Errorf("lineages among listed: %+v", got)
+	}
+	for _, c := range []struct {
+		in   string
+		s    Suggestion
+		want string
+	}{
+		{"", Suggestion{Term: "price<"}, "price<"},
+		{"sk", Suggestion{Term: "skin:"}, "skin:"},
+		{"skele so", Suggestion{Term: "sort:price"}, "skele sort:price "},
+		{"li", Suggestion{Term: "listed"}, "listed "},
+	} {
+		if got := Complete(c.in, c.s); got != c.want {
+			t.Errorf("complete %q with %s: %q", c.in, c.s.Text(), got)
+		}
+	}
+	if q := Parse("price< sort: # rank>=", ix.Cat); len(q.Errs) != 0 || len(q.Terms) != 0 {
+		t.Errorf("pending terms: %+v", q)
+	}
+}
+
 func TestSuggest(t *testing.T) {
 	ts := fixture()
 	ix := NewIndex(ts)
 	q := Parse("skele rim", ix.Cat)
-	got := ix.Suggest("skele rim", ix.Run(q, ts), ts, 6)
+	got := ix.Suggest("skele rim", ix.Run(q, ts), ts)
 	if len(got) != 2 || got[0].Value != "Rim Bone" || got[0].Count != 1 || got[1].Value != "Rim Cobalt" {
 		t.Fatalf("suggest: %+v", got)
 	}
 	if c := Complete("skele rim", got[0]); c != `skele eyes:"Rim Bone" ` {
 		t.Fatalf("complete: %q", c)
 	}
-	got = ix.Suggest("4", ix.Run(Parse("4", ix.Cat), ts), ts, 6)
+	got = ix.Suggest("4", ix.Run(Parse("4", ix.Cat), ts), ts)
 	if len(got) == 0 || got[0].Jump != 4 {
 		t.Fatalf("jump: %+v", got)
 	}
-	if got := ix.Suggest("skele ", nil, ts, 6); got != nil {
+	if got := ix.Suggest("skele ", nil, ts); got != nil {
 		t.Fatalf("finished term: %+v", got)
 	}
-	got = ix.Suggest("head:no", ix.Run(Parse("", ix.Cat), ts), ts, 6)
+	got = ix.Suggest("head:no", ix.Run(Parse("", ix.Cat), ts), ts)
 	if len(got) != 3 || got[0].Value != "None" {
 		t.Fatalf("key suggest: %+v", got)
 	}

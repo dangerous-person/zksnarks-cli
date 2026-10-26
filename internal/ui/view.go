@@ -145,7 +145,40 @@ func (m *Model) suggestionLines() int {
 	if len(m.sugg) == 0 {
 		return 0
 	}
-	return len(m.sugg) + 2
+	return min(len(m.sugg), suggRows) + 2
+}
+
+func (m *Model) suggX() int {
+	if m.panel.open {
+		return suggX + panelW + 2
+	}
+	return suggX
+}
+
+func (m *Model) inSuggestions(x, y int) bool {
+	top, x0 := m.headRows(), m.suggX()
+	return len(m.sugg) > 0 && x >= x0 && x < x0+suggW && y >= top && y < top+m.suggestionLines()
+}
+
+func (m *Model) drawSuggestions(cv *canvas) {
+	box := m.suggestionBox()
+	if len(box) == 0 {
+		return
+	}
+	x, y := m.suggX(), m.headRows()
+	x1 := x + suggW
+	if m.mode == modeList {
+		_, tableW, _, _ := m.listLayout(m.resultsW(), m.bodyH())
+		x1 = max(x1, x-2+tableW+1)
+	}
+	x0 := x - 2
+	if !m.panel.open {
+		x0 = 1
+	}
+	cv.fill(x0, y, x1, y+len(box), m.theme.BodyBg)
+	for i, l := range box {
+		cv.draw(x, y+i, l.s)
+	}
 }
 
 // suggestionBox lists completions under the search box while a term is being typed.
@@ -153,37 +186,71 @@ func (m *Model) suggestionBox() []line {
 	if len(m.sugg) == 0 {
 		return nil
 	}
-	const w = 44
+	const w = suggW
 	b := fg(m.theme.Border)
+	n := len(m.sugg)
+	size, pos := suggRows, 0
+	if n > suggRows {
+		size = max(1, suggRows*suggRows/n)
+		pos = m.suggTop * (suggRows - size) / (n - suggRows)
+	}
+	parts := strings.Fields(m.input.text)
+	keyed := len(parts) > 0 && strings.Contains(parts[len(parts)-1], ":")
 	var out []line
-	out = append(out, text(b, "  ╭"+strings.Repeat("─", w-2)+"╮"))
-	for i, s := range m.sugg {
+	out = append(out, text(b, "╭"+strings.Repeat("─", w-2)+"╮"))
+	for y := range min(n, suggRows) {
+		i := m.suggTop + y
+		s := m.sugg[i]
 		var r row
-		r.put(b, "  │ ")
+		r.put(b, "│ ")
 		cur := "  "
 		if i == m.suggSel {
 			cur = pointer + " "
 		}
 		r.put(fg(m.theme.Accent), cur)
-		if s.Jump != 0 {
+		switch {
+		case s.Jump != 0:
 			r.put(fg(m.theme.Text), "jump to #"+itoa(s.Jump))
-		} else {
+		case s.Term != "":
+			r.put(fg(m.theme.Text), s.Term+strings.Repeat(" ", max(1, 13-width(s.Term))))
+			if s.Count > 0 {
+				r.put(fg(m.theme.Dim), clip(s.Note, w-26))
+			} else {
+				r.put(fg(m.theme.Dim), clip(s.Note, w-20))
+			}
+		case keyed:
+			r.put(fg(m.theme.Text), clip(s.Value, w-13))
+		default:
 			name := strings.ToLower(searchKey(s.Key))
-			r.put(fg(m.theme.Dim), name+strings.Repeat(" ", max(1, 10-width(name))))
-			r.put(fg(m.theme.Text), clip(s.Value, w-24))
-			r.padTo(2 + w - 2 - 6)
+			r.put(fg(m.theme.Dim), name+strings.Repeat(" ", max(1, 13-width(name))))
+			r.put(fg(m.theme.Text), clip(s.Value, w-26))
+		}
+		if s.Count > 0 {
+			r.padTo(w - 2 - 6)
 			r.put(fg(m.theme.Dim), padLeft(comma(s.Count), 5))
 		}
-		r.padTo(2 + w - 1)
-		r.put(b, "│")
+		r.padTo(w - 1)
+		if n > suggRows && y >= pos && y < pos+size {
+			r.put(fg(m.theme.Scrollbar), "┃")
+		} else {
+			r.put(b, "│")
+		}
 		out = append(out, r.line())
 	}
 	var r row
-	r.put(b, "  ╰─ ")
-	tab := m.hints("tab", "complete")
-	r.cells(tab.s, tab.w)
+	r.put(b, "╰─ ")
+	key := m.hints("tab", "complete")
+	if m.enterCompletes() {
+		key = m.hints("enter", "complete")
+	}
+	r.cells(key.s, key.w)
 	r.space(1)
-	r.put(b, strings.Repeat("─", w-r.w+1)+"╯")
+	if n > suggRows {
+		count := itoa(m.suggSel+1) + " of " + itoa(n)
+		r.put(b, strings.Repeat("─", w-4-width(count)-r.w))
+		r.put(fg(m.theme.Dim), " "+count+" ")
+	}
+	r.put(b, strings.Repeat("─", w-1-r.w)+"╯")
 	out = append(out, r.line())
 	return out
 }
