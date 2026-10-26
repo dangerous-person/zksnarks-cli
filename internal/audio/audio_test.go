@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"math/rand/v2"
+	"sync"
 	"testing"
 	"time"
 
@@ -158,5 +159,71 @@ func TestWatchdog(t *testing.T) {
 	w.stuck(7, at(1))
 	if w.stuck(7, at(1).Add(5*time.Second)) || w.stuck(7, at(2).Add(5*time.Second)) {
 		t.Error("stuck right after the program was held up")
+	}
+}
+
+type fakeDevice struct {
+	mu                sync.Mutex
+	suspends, resumes int
+}
+
+func (f *fakeDevice) Suspend() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.suspends++
+	return nil
+}
+
+func (f *fakeDevice) Resume() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resumes++
+	return nil
+}
+
+func (f *fakeDevice) calls() (int, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.suspends, f.resumes
+}
+
+func TestIdleDeviceRests(t *testing.T) {
+	dev := &fakeDevice{}
+	d := &idler{dev: dev}
+	asleep := func(suspends int) time.Duration {
+		t.Helper()
+		start := time.Now()
+		for time.Since(start) < 2*time.Second {
+			if s, _ := dev.calls(); s == suspends {
+				return time.Since(start)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("not suspended %d times", suspends)
+		return 0
+	}
+	d.mu.Lock()
+	d.later()
+	d.mu.Unlock()
+	if took := asleep(1); took < restAfter-10*time.Millisecond {
+		t.Errorf("suspended after %v, want %v", took, restAfter)
+	}
+	d.wake()
+	if _, r := dev.calls(); r != 1 {
+		t.Fatalf("%d resumes after a play", r)
+	}
+	d.rest()
+	d.wake()
+	d.wake()
+	d.rest()
+	time.Sleep(restAfter + 200*time.Millisecond)
+	if s, r := dev.calls(); s != 1 || r != 1 {
+		t.Fatalf("%d suspends, %d resumes while a track plays", s, r)
+	}
+	d.rest()
+	asleep(2)
+	d.wake()
+	if s, r := dev.calls(); s != 2 || r != 2 {
+		t.Errorf("%d suspends, %d resumes", s, r)
 	}
 }

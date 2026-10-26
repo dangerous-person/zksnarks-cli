@@ -89,7 +89,7 @@ func (m *Model) selectSpot(i int) {
 
 // openPlayer plays the picked spotlight's interview in its window.
 func (m *Model) openPlayer() tea.Cmd {
-	if m.interviewOf(m.spot) == nil {
+	if m.openInterview(m.spot) == nil {
 		return nil
 	}
 	m.watchOpen = true

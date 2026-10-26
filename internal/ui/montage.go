@@ -48,8 +48,10 @@ type montagePlayer struct {
 	at         time.Duration
 	t0         time.Time
 	base       time.Duration
+	heard      time.Duration
 	synced     bool
 	gen        int
+	held       bool
 }
 
 type montageTickMsg int
@@ -158,8 +160,12 @@ func (p *montagePlayer) frameAt(t time.Duration) (*video.Video, int) {
 	pos := it.In
 	if s >= it.Start {
 		found := false
-		for _, x := range p.items {
-			if s >= x.Start && s < x.Start+x.Len {
+		for i, x := range p.items {
+			end := x.Start + x.Len
+			if i+1 < len(p.items) && p.items[i+1].Start < end+montageBridge {
+				end = max(end, p.items[i+1].Start)
+			}
+			if s >= x.Start && s < end {
 				it, found = x, true
 				break
 			}
@@ -167,7 +173,7 @@ func (p *montagePlayer) frameAt(t time.Duration) (*video.Video, int) {
 		if !found {
 			return nil, 0
 		}
-		pos = it.In + s - it.Start
+		pos = it.In + min(s-it.Start, it.Len-0.001)
 	}
 	if it.Loop {
 		pos = math.Mod(pos, it.video.Duration().Seconds())
@@ -206,7 +212,12 @@ func (m *Model) playMontage() tea.Cmd {
 		p.at = p.lead
 		p.seekSound()
 	}
-	p.state, p.base, p.t0, p.synced = watchPlaying, p.at, time.Now(), false
+	if m.w < minW || m.h < minH {
+		p.state, p.held = watchPaused, true
+		p.gen++
+		return nil
+	}
+	p.state, p.base, p.t0, p.synced, p.held = watchPlaying, p.at, time.Now(), false, false
 	p.gen++
 	cmds := []tea.Cmd{m.montageTick()}
 	if p.sound != nil {
@@ -262,8 +273,21 @@ func (m *Model) stopMontage() {
 	if p.sound != nil {
 		p.sound.Rewind()
 	}
-	p.state, p.at = watchStopped, p.lead
+	p.state, p.at, p.held = watchStopped, p.lead, false
 	p.gen++
+}
+
+func (m *Model) fitMontage() tea.Cmd {
+	p := &m.mont
+	small := m.w < minW || m.h < minH
+	switch {
+	case small && p.state == watchPlaying:
+		m.pauseMontage()
+		p.held = true
+	case !small && p.held:
+		return m.playMontage()
+	}
+	return nil
 }
 
 func (p *montagePlayer) seekSound() {
@@ -335,6 +359,8 @@ func (m *Model) montageClock(now time.Time) time.Duration {
 		return p.base + now.Sub(p.t0)
 	}
 	a := p.sound.Position()
+	moved := a != p.heard
+	p.heard = a
 	if !p.synced {
 		if a <= p.base {
 			p.t0 = now
@@ -344,6 +370,9 @@ func (m *Model) montageClock(now time.Time) time.Duration {
 		return a
 	}
 	pos := p.base + now.Sub(p.t0)
+	if !moved {
+		return pos
+	}
 	e := a - pos
 	if e > drift || e < -drift {
 		p.t0, p.base = now, a
@@ -446,7 +475,10 @@ func (m *Model) montageLines(w, h int) []line {
 	return out
 }
 
-const montageMinRows = 12
+const (
+	montageMinRows = 12
+	montageBridge  = 0.05
+)
 
 func cropCells(s string, from, n int) string {
 	var b strings.Builder

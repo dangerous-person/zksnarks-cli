@@ -286,7 +286,6 @@ func (m *Model) applySnapshot(s *market.Snapshot) bool {
 		t := &m.tokens[i]
 		if t.Purged != lt.Purged {
 			delete(m.thumbs, i) // purged art is drawn in grey
-			delete(m.cards, i)
 		}
 		t.Listed, t.Ask, t.Bid, t.Last, t.Purged, t.Auction = lt.Listed, string(lt.Ask), string(lt.Bid), string(lt.Last), lt.Purged, lt.Auction
 		t.ListedAt = ""

@@ -30,6 +30,7 @@ const (
 	suggX      = 4
 	shadeDist  = 48
 	darkShade  = 45
+	thumbCache = 2000
 )
 
 type mode int
@@ -124,8 +125,6 @@ type Model struct {
 	panel     panel
 
 	thumbs   map[int][]string
-	cards    map[int][]string
-	previews map[int][]string
 	swatches map[int]art.RGB
 	artSize  artSize
 	skins    map[[2]string]map[art.RGB]bool
@@ -176,8 +175,6 @@ func New(o Options) *Model {
 		tokens:     append([]atlas.Token(nil), o.Atlas.Tokens...),
 		byID:       map[int]int{},
 		thumbs:     map[int][]string{},
-		cards:      map[int][]string{},
-		previews:   map[int][]string{},
 		swatches:   map[int]art.RGB{},
 		histories:  map[int]*history{},
 		artChanged: map[int]bool{},
@@ -316,31 +313,17 @@ func (m *Model) thumb(i int) []string {
 	if t, ok := m.thumbs[i]; ok {
 		return t
 	}
+	if len(m.thumbs) >= thumbCache {
+		clear(m.thumbs)
+	}
 	t := art.Thumb(m.artOf(i), m.opts.Glyph)
 	m.thumbs[i] = t
 	return t
 }
 
-func (m *Model) cardArt(i int) []string {
-	if c, ok := m.cards[i]; ok {
-		return c
-	}
-	c := art.Card(m.artOf(i))
-	m.cards[i] = c
-	return c
-}
+func (m *Model) cardArt(i int) []string { return art.Card(m.artOf(i)) }
 
-func (m *Model) previewArt(i int) []string {
-	if !m.tokens[i].Purged {
-		return m.cardArt(i)
-	}
-	if c, ok := m.previews[i]; ok {
-		return c
-	}
-	c := art.Card(m.tokens[i].Art)
-	m.previews[i] = c
-	return c
-}
+func (m *Model) previewArt(i int) []string { return art.Card(m.tokens[i].Art) }
 
 func (m *Model) previewThumb(i int) []string {
 	if !m.tokens[i].Purged {
@@ -359,6 +342,25 @@ func (m *Model) artOf(i int) art.Art {
 
 // Update handles a message.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.update(msg)
+	return m, tea.Batch(cmd, m.startTicks())
+}
+
+func (m *Model) startTicks() tea.Cmd {
+	if m.blurred {
+		return nil
+	}
+	cmds := []tea.Cmd{m.startShimmer(), m.emptyTick()}
+	switch m.section {
+	case secRoot:
+		cmds = append(cmds, m.startPageTick(), m.startStill())
+	case secLuminaries, secNetwork:
+		cmds = append(cmds, m.startPageTick())
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height

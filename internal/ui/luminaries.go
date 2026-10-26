@@ -498,6 +498,10 @@ func pageTick() tea.Cmd {
 }
 
 func (m *Model) onPageTick() tea.Cmd {
+	if m.blurred {
+		m.ticking = false
+		return nil
+	}
 	switch m.section {
 	case secRoot:
 		m.drips(&m.rootDrips, rootFont, 13).step()

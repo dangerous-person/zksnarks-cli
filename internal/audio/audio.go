@@ -27,6 +27,7 @@ const (
 	startLimit = 2 * time.Second
 	stallLimit = 2 * time.Second
 	probeBytes = bytesPerSecond
+	restAfter  = 300 * time.Millisecond
 )
 
 // latency is how far the device's own buffers run ahead of the speakers with oto's
@@ -47,6 +48,53 @@ var device struct {
 	err  error
 }
 
+type idler struct {
+	mu  sync.Mutex
+	dev interface {
+		Suspend() error
+		Resume() error
+	}
+	playing int
+	asleep  bool
+	gen     int
+}
+
+var idle idler
+
+func (d *idler) wake() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.playing++
+	d.gen++
+	if d.asleep {
+		d.dev.Resume()
+		d.asleep = false
+	}
+}
+
+func (d *idler) rest() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.playing--
+	d.later()
+}
+
+func (d *idler) later() {
+	if d.playing > 0 || d.asleep || d.dev == nil {
+		return
+	}
+	d.gen++
+	gen := d.gen
+	time.AfterFunc(restAfter, func() {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.gen == gen && d.playing == 0 && !d.asleep {
+			d.dev.Suspend()
+			d.asleep = true
+		}
+	})
+}
+
 // open starts the audio device the first time a track needs it.
 func open() (*oto.Context, error) {
 	device.once.Do(func() {
@@ -54,6 +102,12 @@ func open() (*oto.Context, error) {
 		device.mu.Lock()
 		device.ctx, device.err = ctx, err
 		device.mu.Unlock()
+		if ctx != nil {
+			idle.mu.Lock()
+			idle.dev = ctx
+			idle.later()
+			idle.mu.Unlock()
+		}
 	})
 	device.mu.Lock()
 	defer device.mu.Unlock()
@@ -270,6 +324,9 @@ func padding(data []byte) int {
 
 // Play starts or resumes the sound.
 func (t *Track) Play() {
+	if !t.playing {
+		idle.wake()
+	}
 	t.player.Play()
 	t.playing = true
 	t.dog.start(time.Now())
@@ -278,6 +335,9 @@ func (t *Track) Play() {
 // Pause holds the sound where it is.
 func (t *Track) Pause() {
 	t.player.Pause()
+	if t.playing {
+		idle.rest()
+	}
 	t.playing = false
 }
 
@@ -335,6 +395,9 @@ func (t *Track) Length() time.Duration { return t.length }
 
 // Close stops the sound for good.
 func (t *Track) Close() {
+	if t.playing {
+		idle.rest()
+	}
 	t.playing = false
 	t.player.PauseAndStopReading()
 }

@@ -301,6 +301,22 @@ func TestClickLeavesSearch(t *testing.T) {
 	}
 }
 
+func TestTicksPauseOnBlur(t *testing.T) {
+	m := colourModel(t, Options{})
+	m.Update(tea.BlurMsg{})
+	if m.onPageTick() != nil || m.ticking || m.onShimmerTick() != nil || m.shimmerTicking {
+		t.Fatalf("still ticking while blurred: page %v, shimmer %v", m.ticking, m.shimmerTicking)
+	}
+	m.Update(tea.FocusMsg{})
+	if !m.ticking || !m.shimmerTicking {
+		t.Fatalf("not restarted on focus: page %v, shimmer %v", m.ticking, m.shimmerTicking)
+	}
+	m.Update(tea.KeyPressMsg{Code: '1', Text: "1"})
+	if m.onShimmerTick(); m.shimmerTicking {
+		t.Fatal("the shimmer keeps running in the market view")
+	}
+}
+
 func TestPreviewShowsAllArt(t *testing.T) {
 	m := colourModel(t, Options{})
 	openZilkroad(m, false)

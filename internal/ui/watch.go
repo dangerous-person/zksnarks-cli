@@ -15,6 +15,7 @@ import (
 
 // interview is a spotlight's interview from the media folder: the terminal video and its sound.
 type interview struct {
+	name     string
 	video    *video.Video
 	mp3      []byte // nil when there is no sound file
 	sound    sound  // opened on the first watch
@@ -32,8 +33,8 @@ type sound interface {
 	Err() error
 }
 
-// interviewOf loads the interview of spotlight i once: NAME.zkv and NAME.mp3, NAME being the
-// site's video file name. It is nil when there is no video.
+// interviewOf is the interview of spotlight i: NAME.zkv and NAME.mp3, NAME being the site's
+// video file name. It is nil when there is no video; openInterview reads it.
 func (m *Model) interviewOf(i int) *interview {
 	if c, ok := m.interviews[i]; ok {
 		return c
@@ -41,14 +42,28 @@ func (m *Model) interviewOf(i int) *interview {
 	var c *interview
 	if s := m.opts.Site.Spotlights; i < len(s) && s[i].Video != "" {
 		name := strings.TrimSuffix(path.Base(s[i].Video), path.Ext(s[i].Video))
-		if data, err := readMedia(m.opts.Media, name+".zkv"); err == nil {
-			if v, err := video.Read(data); err == nil {
-				c = &interview{video: v}
-				c.mp3, _ = readMedia(m.opts.Media, name+".mp3")
-			}
+		if isMedia(m.opts.Media, name+".zkv") {
+			c = &interview{name: name}
 		}
 	}
 	m.interviews[i] = c
+	return c
+}
+
+func (m *Model) openInterview(i int) *interview {
+	c := m.interviewOf(i)
+	if c == nil || c.video != nil {
+		return c
+	}
+	data, err := readMedia(m.opts.Media, c.name+".zkv")
+	if err == nil {
+		c.video, err = video.Read(data)
+	}
+	if err != nil {
+		m.interviews[i] = nil
+		return nil
+	}
+	c.mp3, _ = readMedia(m.opts.Media, c.name+".mp3")
 	return c
 }
 
@@ -102,6 +117,7 @@ type watch struct {
 	at     time.Duration // the position on screen
 	t0     time.Time     // the wall clock runs the position from base at t0
 	base   time.Duration
+	heard  time.Duration
 	synced bool // the sound has reached the speakers, so the clock follows it
 	gen    int  // ticks of an earlier run are dropped
 	held   bool
@@ -121,7 +137,7 @@ type soundMsg struct {
 
 // watchKey handles the player's keys on the network page.
 func (m *Model) watchKey(k string) (tea.Cmd, bool) {
-	c := m.interviewOf(m.spot)
+	c := m.openInterview(m.spot)
 	if c == nil {
 		return nil, false
 	}
@@ -212,6 +228,9 @@ func (m *Model) stopWatch() {
 }
 
 func (m *Model) fitPlayer() tea.Cmd {
+	if m.mont.open {
+		return m.fitMontage()
+	}
 	w := &m.watch
 	if !m.playerOpen() || w.spot != m.spot {
 		return nil
@@ -300,6 +319,8 @@ func (m *Model) clock(now time.Time) time.Duration {
 		return w.base + now.Sub(w.t0)
 	}
 	a := c.sound.Position()
+	moved := a != w.heard
+	w.heard = a
 	if !w.synced {
 		if a <= w.base { // not at the speakers yet
 			w.t0 = now
@@ -309,6 +330,9 @@ func (m *Model) clock(now time.Time) time.Duration {
 		return a
 	}
 	pos := w.base + now.Sub(w.t0)
+	if !moved {
+		return pos
+	}
 	e := a - pos
 	if e > drift || e < -drift {
 		w.t0, w.base = now, a

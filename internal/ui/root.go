@@ -131,7 +131,19 @@ const (
 
 type shimmerTickMsg struct{}
 
-func (m *Model) shimmers() bool { return true }
+func (m *Model) shimmers() bool {
+	switch m.section {
+	case secRoot:
+		return !m.mont.open
+	case secManifesto:
+		return !m.reading
+	case secNetwork:
+		return !m.watchOpen
+	case secAbout:
+		return !m.contactOpen
+	}
+	return false
+}
 
 func (m *Model) startShimmer() tea.Cmd {
 	if m.shimmerTicking || !m.shimmers() {
@@ -146,7 +158,7 @@ func shimmerTick(d time.Duration) tea.Cmd {
 }
 
 func (m *Model) onShimmerTick() tea.Cmd {
-	if !m.shimmers() {
+	if !m.shimmers() || m.blurred {
 		m.shimmerTicking, m.shimmerAt = false, -1
 		return nil
 	}
@@ -335,7 +347,7 @@ func (m *Model) stillTick() tea.Cmd {
 }
 
 func (m *Model) onStillTick() tea.Cmd {
-	if m.section != secRoot {
+	if m.section != secRoot || m.blurred {
 		m.stillTicking = false
 		return nil
 	}
