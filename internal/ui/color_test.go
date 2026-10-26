@@ -107,3 +107,28 @@ func TestIndexedView(t *testing.T) {
 		t.Error("truecolor view is not drawn in truecolor")
 	}
 }
+
+func TestSwatchIsTheSkin(t *testing.T) {
+	m := colourModel(t, Options{})
+	red := func(c art.RGB) bool { return int(c[0]) > int(c[1])+60 && int(c[0]) > int(c[2])+60 }
+	green := func(c art.RGB) bool { return int(c[1]) > int(c[0])+20 && int(c[1]) > int(c[2])+20 }
+	light := func(c art.RGB) bool { return int(c[0])*3+int(c[1])*6+int(c[2]) > 1000 }
+	for _, c := range []struct {
+		id   int
+		want func(art.RGB) bool
+	}{
+		{1943, red},
+		{1952, red},
+		{1963, red},
+		{1955, green},
+		{1946, green},
+		{144, light},
+		{5, light},
+		{340, green},
+		{1132, green},
+	} {
+		if got := m.swatch(m.byID[c.id]); !c.want(got) {
+			t.Errorf("#%d %v: swatch %v", c.id, m.tokens[m.byID[c.id]].Traits[:4], got)
+		}
+	}
+}

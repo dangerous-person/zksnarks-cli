@@ -28,6 +28,8 @@ const (
 	suggRows   = 6
 	suggW      = 44
 	suggX      = 4
+	shadeDist  = 48
+	darkShade  = 45
 )
 
 type mode int
@@ -124,6 +126,9 @@ type Model struct {
 	thumbs   map[int][]string
 	cards    map[int][]string
 	previews map[int][]string
+	swatches map[int]art.RGB
+	artSize  artSize
+	skins    map[[2]string]map[art.RGB]bool
 
 	stats     *market.Stats
 	rate      *market.Rate
@@ -173,6 +178,7 @@ func New(o Options) *Model {
 		thumbs:     map[int][]string{},
 		cards:      map[int][]string{},
 		previews:   map[int][]string{},
+		swatches:   map[int]art.RGB{},
 		histories:  map[int]*history{},
 		artChanged: map[int]bool{},
 		interviews: map[int]*interview{},
@@ -471,6 +477,10 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 			return m.tokenKey(k)
 		}
 		m.move(k)
+	case "+", "=", "-":
+		if m.mode == modeList {
+			m.resizeArt(k != "-")
+		}
 	case "v":
 		if m.mode == modeGallery {
 			m.mode = modeList
@@ -879,6 +889,10 @@ func (m *Model) click(ms tea.Mouse) tea.Cmd {
 	if m.mode == modeList {
 		for _, k := range m.keys { // the preview's key hints
 			if k.contains(ms.X, ms.Y) {
+				if k.key == "+" || k.key == "-" {
+					m.resizeArt(k.key == "+")
+					return nil
+				}
 				return m.tokenKey(k.key)
 			}
 		}

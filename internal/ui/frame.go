@@ -380,8 +380,20 @@ func (m *Model) footerHints() []line {
 	if m.mode == modeList {
 		other = "grid"
 	}
-	return []line{
+	base := []line{
 		m.hints("enter", "open", "f", "filters", "v", other, "?", "help"),
 		m.hints("f", "filters", "?", "help"),
 	}
+	if m.mode != modeList {
+		return base
+	}
+	expand, ok := m.artToggle()
+	if !ok {
+		return base
+	}
+	key, label := "-", "collapse"
+	if expand {
+		key, label = "+", "expand"
+	}
+	return append([]line{m.hints("enter", "open", "f", "filters", "v", other, key, label, "?", "help")}, base...)
 }

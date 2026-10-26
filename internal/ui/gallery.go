@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"slices"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -118,19 +120,129 @@ func (m *Model) emptyLines(w, h int) []line {
 	return centre(block, 0, w, h)
 }
 
-// swatch is the most common non-black colour of a token, for the list view.
-func swatch(a art.Art) art.RGB {
-	counts := make([]int, len(a.Palette))
-	for _, p := range a.Pix {
+// swatch is the colour of a token's skin, for the list view: its largest group of near
+// shades among the colours that most hatless tokens of the same lineage and skin share and
+// most other skins of that lineage do not, near-black groups counting for less. So neither a
+// hat nor a lineage's own dark parts win over a skin drawn in several shades.
+func (m *Model) swatch(i int) art.RGB {
+	if c, ok := m.swatches[i]; ok {
+		return c
+	}
+	if m.skins == nil {
+		m.skins = skinColours(m.tokens)
+	}
+	t := &m.tokens[i]
+	shared := m.skins[[2]string{t.Traits[0], t.Traits[1]}]
+	counts := make([]int, len(t.Art.Palette))
+	for _, p := range t.Art.Pix {
 		counts[p]++
 	}
-	best, bestN := art.RGB{}, -1
-	for i, n := range counts {
-		if c := a.Palette[i]; c != (art.RGB{}) && n > bestN {
-			best, bestN = c, n
+	var skin, all []int
+	for k, c := range t.Art.Palette {
+		if c != (art.RGB{}) && counts[k] > 0 {
+			all = append(all, k)
+			if shared[c] {
+				skin = append(skin, k)
+			}
 		}
 	}
-	return best
+	if len(skin) == 0 {
+		skin = all
+	}
+	c := largestShade(t.Art.Palette, counts, skin)
+	m.swatches[i] = c
+	return c
+}
+
+func skinColours(tokens []atlas.Token) map[[2]string]map[art.RGB]bool {
+	seen := map[[2]string]map[art.RGB]int{}
+	refs := map[[2]string]int{}
+	for _, t := range tokens {
+		if t.Traits[3] != "None" {
+			continue
+		}
+		k := [2]string{t.Traits[0], t.Traits[1]}
+		refs[k]++
+		if seen[k] == nil {
+			seen[k] = map[art.RGB]int{}
+		}
+		for _, c := range t.Art.Palette {
+			seen[k][c]++
+		}
+	}
+	out := map[[2]string]map[art.RGB]bool{}
+	skins := map[string][][2]string{}
+	for k, cs := range seen {
+		out[k] = map[art.RGB]bool{}
+		for c, n := range cs {
+			if 2*n >= refs[k] {
+				out[k][c] = true
+			}
+		}
+		skins[k[0]] = append(skins[k[0]], k)
+	}
+	for _, ks := range skins {
+		if len(ks) < 2 {
+			continue
+		}
+		shared := map[art.RGB]int{}
+		for _, k := range ks {
+			for c := range out[k] {
+				shared[c]++
+			}
+		}
+		for _, k := range ks {
+			own := map[art.RGB]bool{}
+			for c := range out[k] {
+				if 2*shared[c] <= len(ks) {
+					own[c] = true
+				}
+			}
+			if len(own) > 0 {
+				out[k] = own
+			}
+		}
+	}
+	return out
+}
+
+func largestShade(pal []art.RGB, counts, idx []int) art.RGB {
+	if len(idx) == 0 {
+		return art.RGB{}
+	}
+	sort.SliceStable(idx, func(a, b int) bool { return counts[idx[a]] > counts[idx[b]] })
+	var seeds, weights []int
+	for _, i := range idx {
+		j := slices.IndexFunc(seeds, func(s int) bool { return nearShade(pal[i], pal[s]) })
+		if j < 0 {
+			seeds, weights = append(seeds, i), append(weights, 0)
+			j = len(seeds) - 1
+		}
+		weights[j] += counts[i]
+	}
+	best := 0
+	for j := range seeds {
+		if weights[j] = shadeWeight(pal[seeds[j]], weights[j]); weights[j] > weights[best] {
+			best = j
+		}
+	}
+	return pal[seeds[best]]
+}
+
+func shadeWeight(c art.RGB, n int) int {
+	if int(c[0])*3+int(c[1])*6+int(c[2]) < darkShade*10 {
+		return n * 3 / 10
+	}
+	return n
+}
+
+func nearShade(a, b art.RGB) bool {
+	d := 0
+	for i := range a {
+		x := int(a[i]) - int(b[i])
+		d += x * x
+	}
+	return d < shadeDist*shadeDist
 }
 
 func bgCell(c art.RGB, s string) string {

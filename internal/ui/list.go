@@ -37,9 +37,9 @@ const listFixed = 2 + 3 + 7 + 7
 // how wide it is and how wide the preview next to it is: 0 for none, big for the card art.
 func (m *Model) listLayout(w, h int) (cols []column, tableW, previewW int, big bool) {
 	switch {
-	case w >= art.CardW+2+50 && h >= art.CardH+3:
+	case m.bigArt(w, h):
 		previewW, big = art.CardW, true
-	case w >= art.ThumbW+2+40:
+	case w >= art.ThumbW+2+40 && h >= art.ThumbH:
 		previewW = art.ThumbW
 	}
 	room := w - listFixed
@@ -56,6 +56,57 @@ func (m *Model) listLayout(w, h int) (cols []column, tableW, previewW int, big b
 		tableW += c.w + 2
 	}
 	return cols, tableW, previewW, big
+}
+
+type artSize int
+
+const (
+	artAuto artSize = iota
+	artSmall
+	artBig
+)
+
+func canBigArt(w, h int) bool {
+	return w >= art.CardW+2+listFixed+listColumns[0].w+2 && h >= art.CardH+3
+}
+
+const (
+	collapseIcon = "›‹"
+	expandIcon   = "‹›"
+)
+
+func (m *Model) bigArt(w, h int) bool {
+	switch m.artSize {
+	case artBig:
+		return canBigArt(w, h)
+	case artSmall:
+		return false
+	}
+	return w >= art.CardW+2+50 && h >= art.CardH+3
+}
+
+func (m *Model) artToggle() (expand, ok bool) {
+	if len(m.results) == 0 {
+		return false, false
+	}
+	w, h := m.resultsW(), m.bodyH()
+	_, _, previewW, big := m.listLayout(w, h)
+	switch {
+	case big:
+		return false, true
+	case previewW > 0 && canBigArt(w, h):
+		return true, true
+	}
+	return false, false
+}
+
+func (m *Model) resizeArt(expand bool) {
+	if e, ok := m.artToggle(); ok && e == expand {
+		m.artSize = artSmall
+		if expand {
+			m.artSize = artBig
+		}
+	}
 }
 
 // listLines draws a table of results, the price right after the traits, and a preview of the
@@ -99,7 +150,7 @@ func (m *Model) listLines(w, h int) []line {
 		} else {
 			r.space(2)
 		}
-		r.cells(bgCell(swatch(t.Art), "  "), 2)
+		r.cells(bgCell(m.swatch(i), "  "), 2)
 		r.space(1)
 		r.put(textStyle, "#"+itoa(t.ID))
 		r.padTo(12)
@@ -150,14 +201,19 @@ func (m *Model) listLines(w, h int) []line {
 	if m.panel.open {
 		ox += panelW + 2
 	}
-	info := m.previewInfo(t, previewW, h-len(artLines), ox, m.headRows()+len(artLines))
+	top := m.headRows()
+	info := m.previewInfo(t, previewW, h-len(artLines), ox, top+len(artLines))
 	for y := 0; y < h; y++ {
 		var r row
 		r.cells(out[y].s, out[y].w)
 		r.padTo(x)
 		switch {
 		case y < len(artLines):
-			r.cells(artLines[y], previewW)
+			l := line{artLines[y], previewW}
+			if y == 0 {
+				l = m.artIcon(l, w-x, ox, top)
+			}
+			r.cells(l.s, l.w)
 		case y-len(artLines) < len(info):
 			l := info[y-len(artLines)]
 			r.cells(l.s, l.w)
@@ -165,6 +221,25 @@ func (m *Model) listLines(w, h int) []line {
 		out[y] = r.line()
 	}
 	return out
+}
+
+func (m *Model) artIcon(l line, w, ox, y int) line {
+	expand, ok := m.artToggle()
+	if !ok {
+		return l
+	}
+	icon, key := collapseIcon, "-"
+	if expand {
+		icon, key = expandIcon, "+"
+	}
+	var r row
+	t := truncate(l, w-width(icon))
+	r.cells(t.s, t.w)
+	r.padTo(w - width(icon))
+	x0 := ox + r.w
+	m.keys = append(m.keys, keyRect{rect{x0, y, x0 + width(icon), y + 1}, key})
+	r.put(fg(m.theme.HintKey), icon)
+	return r.line()
 }
 
 // previewInfo is what the list shows under the selected token's art, w wide and at most h

@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/search"
 )
 
@@ -239,6 +240,40 @@ func quits(cmd tea.Cmd) bool {
 	return false
 }
 
+func TestArtToggle(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	header := func() string { return strings.TrimRight(plainView(m)[m.headRows()], " │┃") }
+	footer := func() string { v := plainView(m); return v[len(v)-1] }
+	if !strings.HasSuffix(header(), "›‹") || !strings.Contains(footer(), "[-] COLLAPSE") || strings.Contains(header(), "HEAD") {
+		t.Fatalf("big art: %q / %q", header(), footer())
+	}
+	m.Update(tea.KeyPressMsg{Code: '-', Text: "-"})
+	if !strings.HasSuffix(header(), "‹›") || !strings.Contains(footer(), "[+] EXPAND") || !strings.Contains(header(), "HEAD") {
+		t.Fatalf("collapsed: %q / %q", header(), footer())
+	}
+	row := plainView(m)[m.headRows()]
+	x := len([]rune(row[:strings.Index(row, "‹›")]))
+	m.Update(tea.MouseClickMsg{X: x + 1, Y: m.headRows(), Button: tea.MouseLeft})
+	if !strings.HasSuffix(header(), "›‹") || m.card {
+		t.Fatalf("click: %q, card %v", header(), m.card)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m.artSize = artAuto
+	if !strings.HasSuffix(header(), "‹›") {
+		t.Fatalf("narrow: %q", header())
+	}
+	m.Update(tea.KeyPressMsg{Code: '+', Text: "+"})
+	if !strings.HasSuffix(header(), "›‹") {
+		t.Fatalf("expanded when narrow: %q", header())
+	}
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	if _, ok := m.artToggle(); ok || strings.ContainsAny(header(), "‹›") {
+		t.Fatalf("no preview, still a toggle: %q", header())
+	}
+}
+
 func TestClickLeavesSearch(t *testing.T) {
 	m := colourModel(t, Options{})
 	openZilkroad(m, false)
@@ -263,6 +298,41 @@ func TestClickLeavesSearch(t *testing.T) {
 	}
 	if m.focus != focusMain || m.sugg != nil {
 		t.Fatalf("active tab click: focus %v, %d suggestions", m.focus, len(m.sugg))
+	}
+}
+
+func TestPreviewShowsAllArt(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	for _, size := range [][2]int{{120, 40}, {160, 48}, {300, 90}, {90, 30}} {
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		for _, expand := range []bool{true, false} {
+			m.resizeArt(expand)
+			m.sel = m.byID[97]
+			w, h := m.resultsW(), m.bodyH()
+			_, tableW, previewW, big := m.listLayout(w, h)
+			if previewW == 0 {
+				continue
+			}
+			want := m.previewThumb(m.results[m.sel])
+			if big {
+				want = m.previewArt(m.results[m.sel])
+			}
+			out := m.listLines(w, h)
+			for y, l := range out {
+				if l.w > w {
+					t.Fatalf("%v big %v: line %d is %d wide, more than %d", size, big, y, l.w, w)
+				}
+			}
+			for k, a := range want {
+				if x := tableW + max(2, (w-tableW-previewW)/2); k == 0 && x+previewW > w-2 {
+					a = truncate(line{a, previewW}, w-2-x).s
+				}
+				if !strings.Contains(out[k].s, a) {
+					t.Fatalf("%v big %v: art line %d is missing", size, big, k)
+				}
+			}
+		}
 	}
 }
 
@@ -309,5 +379,16 @@ func TestEnterSearchesBareWords(t *testing.T) {
 	enter("4", 0)
 	if !m.card || m.tokens[m.results[m.sel]].ID != 4 {
 		t.Errorf("4 + enter: card %v", m.card)
+	}
+}
+
+func TestArtCornerIsBlank(t *testing.T) {
+	m := colourModel(t, Options{})
+	for _, tk := range m.tokens {
+		for _, p := range [][2]int{{24, 0}, {25, 0}, {24, 1}, {25, 1}} {
+			if tk.Art.Base(p[0], p[1]) != (art.RGB{}) {
+				t.Errorf("#%d has a pixel at %v, under the art size icon", tk.ID, p)
+			}
+		}
 	}
 }
