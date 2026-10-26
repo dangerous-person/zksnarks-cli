@@ -352,6 +352,26 @@ func TestPreviewShowsAllArt(t *testing.T) {
 	}
 }
 
+func TestPanelClickBelowTheList(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	top := m.headRows()
+	for _, y := range []int{1, 2} {
+		m.Update(tea.MouseClickMsg{X: 5, Y: top + m.panel.listH(m) + y, Button: tea.MouseLeft})
+		if m.input.text != "" {
+			t.Fatalf("a click %d below the list set %q", y, m.input.text)
+		}
+	}
+}
+
+func TestQueryFlagIsCleaned(t *testing.T) {
+	m := colourModel(t, Options{Query: " skele\n\trim\x1b[31m "})
+	if m.input.text != "skele rim[31m" {
+		t.Fatalf("query %q", m.input.text)
+	}
+}
+
 func TestEnterSearchesBareWords(t *testing.T) {
 	m := colourModel(t, Options{})
 	openZilkroad(m, false)

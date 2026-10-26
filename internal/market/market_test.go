@@ -2,6 +2,7 @@ package market
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -159,5 +160,25 @@ func TestNotModifiedWithoutETag(t *testing.T) {
 	})
 	if _, _, err := cl.Stats(context.Background(), ""); err == nil || errors.Is(err, ErrNotModified) {
 		t.Fatalf("got %v, want an HTTP error", err)
+	}
+}
+
+func TestDecimalRejectsJunk(t *testing.T) {
+	cases := map[string]Decimal{
+		`"2.45"`: "2.45", `3`: "3", `"10"`: "10", `null`: "",
+		`"NaN"`: "", `"0x1p-2"`: "", `"1e3"`: "", `"1_000"`: "", `".5"`: "", `"5."`: "", `"-1"`: "",
+		`"` + strings.Repeat("9", 40) + `"`: "",
+	}
+	for in, want := range cases {
+		var d Decimal
+		if err := json.Unmarshal([]byte(in), &d); err != nil || d != want {
+			t.Errorf("%s: %q, %v (want %q)", in, d, err, want)
+		}
+	}
+}
+
+func TestHistoryNameIsPrintable(t *testing.T) {
+	if got := (HistoryEntry{Type: "odd\x1b]52;c;x\x07_type é"}).Name(); got != "odd]52;c;x type" {
+		t.Errorf("name %q", got)
 	}
 }

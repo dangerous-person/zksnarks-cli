@@ -7,6 +7,7 @@ toolchain go1.27.3
 require (
 	charm.land/bubbletea/v2 v2.1.0
 	github.com/charmbracelet/colorprofile v0.4.3
+	github.com/charmbracelet/x/term v0.2.2
 	github.com/ebitengine/oto/v3 v3.5.1
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	rsc.io/qr v0.2.0
@@ -15,7 +16,6 @@ require (
 require (
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
 	github.com/charmbracelet/x/ansi v0.11.9 // indirect
-	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect

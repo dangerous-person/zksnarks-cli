@@ -197,7 +197,7 @@ func New(o Options) *Model {
 		m.theme = plainTheme
 	}
 	m.ix = search.NewIndex(m.tokens)
-	m.input.set(o.Query)
+	m.input.paste(strings.TrimSpace(o.Query))
 	m.refresh(false)
 	m.computeFloors()
 	return m
@@ -737,8 +737,8 @@ func (m *Model) keepSelectionInView() {
 	}
 	cols := m.cols()
 	r, c := m.sel/cols, m.sel%cols
-	first := (m.scroll + pitch - 1) / pitch        // first row whose top gap line is visible
-	last := (m.scroll+m.viewH()-pitch-1)/pitch + 0 // last row whose bottom gap line is visible
+	first := (m.scroll + pitch - 1) / pitch            // first row whose top gap line is visible
+	last := (m.scroll + m.viewH() - pitch - 1) / pitch // last row whose bottom gap line is visible
 	if last < first {
 		last = first
 	}

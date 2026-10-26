@@ -13,8 +13,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -36,11 +34,28 @@ func (d *Decimal) UnmarshalJSON(b []byte) error {
 		if err := json.Unmarshal(b, &s); err != nil {
 			return err
 		}
-		*d = Decimal(s)
+		*d = decimal(s)
 		return nil
 	}
-	*d = Decimal(b)
+	*d = decimal(string(b))
 	return nil
+}
+
+func decimal(s string) Decimal {
+	if len(s) > 32 {
+		return ""
+	}
+	dot := false
+	for i, c := range s {
+		switch {
+		case c >= '0' && c <= '9':
+		case c == '.' && !dot && i > 0 && i < len(s)-1:
+			dot = true
+		default:
+			return ""
+		}
+	}
+	return Decimal(s)
 }
 
 // Token is the market state of one token in a snapshot.
@@ -129,43 +144,25 @@ func (h HistoryEntry) Name() string {
 	if n, ok := historyNames[h.Type]; ok {
 		return n
 	}
-	return strings.ReplaceAll(h.Type, "_", " ")
-}
-
-// Counter tracks network use for the status line.
-type Counter struct {
-	requests atomic.Int64
-	perToken atomic.Int64
-	mu       sync.Mutex
-	last     time.Time
-}
-
-func (c *Counter) add(perToken bool) {
-	c.requests.Add(1)
-	if perToken {
-		c.perToken.Add(1)
-	}
-	c.mu.Lock()
-	c.last = time.Now()
-	c.mu.Unlock()
-}
-
-// Requests returns the number of requests, per-token requests and the last request time.
-func (c *Counter) Requests() (total, perToken int, last time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return int(c.requests.Load()), int(c.perToken.Load()), c.last
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '_':
+			return ' '
+		case r < ' ' || r > '~':
+			return -1
+		}
+		return r
+	}, h.Type)
 }
 
 // Client makes the requests. A nil Client, or one with Offline set, makes none.
 type Client struct {
 	HTTP    *http.Client
 	Offline bool
-	Net     Counter
 }
 
 const (
-	snapshotCap  = 64 << 20
+	snapshotCap  = 16 << 20
 	bodyCap      = 1 << 20
 	maxRedirects = 3
 )
@@ -194,7 +191,7 @@ var ErrOffline = fmt.Errorf("offline")
 
 var ErrNotModified = errors.New("not modified")
 
-func (c *Client) get(ctx context.Context, path, etag string, perToken bool, limit int64, v any) (string, error) {
+func (c *Client) get(ctx context.Context, path, etag string, limit int64, v any) (string, error) {
 	if c == nil || c.Offline {
 		return "", ErrOffline
 	}
@@ -206,7 +203,6 @@ func (c *Client) get(ctx context.Context, path, etag string, perToken bool, limi
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
-	c.Net.add(perToken)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
@@ -235,7 +231,7 @@ func (c *Client) get(ctx context.Context, path, etag string, perToken bool, limi
 // Snapshot fetches all tokens (about 300 KB compressed).
 func (c *Client) Snapshot(ctx context.Context, etag string) (*Snapshot, string, error) {
 	var s Snapshot
-	tag, err := c.get(ctx, "/api/market/tokens", etag, false, snapshotCap, &s)
+	tag, err := c.get(ctx, "/api/market/tokens", etag, snapshotCap, &s)
 	if err != nil {
 		return nil, tag, err
 	}
@@ -245,7 +241,7 @@ func (c *Client) Snapshot(ctx context.Context, etag string) (*Snapshot, string, 
 // Stats fetches the collection stats.
 func (c *Client) Stats(ctx context.Context, etag string) (*Stats, string, error) {
 	var s Stats
-	tag, err := c.get(ctx, "/api/market/stats", etag, false, bodyCap, &s)
+	tag, err := c.get(ctx, "/api/market/stats", etag, bodyCap, &s)
 	if err != nil {
 		return nil, tag, err
 	}
@@ -255,7 +251,7 @@ func (c *Client) Stats(ctx context.Context, etag string) (*Stats, string, error)
 // Rate fetches the ZEC/USD rate.
 func (c *Client) Rate(ctx context.Context, etag string) (*Rate, string, error) {
 	var r Rate
-	tag, err := c.get(ctx, "/api/market/rate", etag, false, bodyCap, &r)
+	tag, err := c.get(ctx, "/api/market/rate", etag, bodyCap, &r)
 	if err != nil {
 		return nil, tag, err
 	}
@@ -267,7 +263,7 @@ func (c *Client) Events(ctx context.Context, etag string) ([]Event, string, erro
 	var e struct {
 		Events []Event `json:"events"`
 	}
-	tag, err := c.get(ctx, "/api/market/events", etag, false, bodyCap, &e)
+	tag, err := c.get(ctx, "/api/market/events", etag, bodyCap, &e)
 	if err != nil {
 		return nil, tag, err
 	}
@@ -280,7 +276,7 @@ func (c *Client) History(ctx context.Context, id int) ([]HistoryEntry, error) {
 	var r struct {
 		History []HistoryEntry `json:"history"`
 	}
-	if _, err := c.get(ctx, "/api/snarks/"+strconv.Itoa(id), "", true, bodyCap, &r); err != nil {
+	if _, err := c.get(ctx, "/api/snarks/"+strconv.Itoa(id), "", bodyCap, &r); err != nil {
 		return nil, err
 	}
 	return r.History, nil

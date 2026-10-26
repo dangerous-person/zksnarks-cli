@@ -19,7 +19,7 @@ func openURL(url string) tea.Cmd {
 		default:
 			cmd = exec.Command("xdg-open", url)
 		}
-		_ = cmd.Start()
+		_ = cmd.Run()
 		return nil
 	}
 }

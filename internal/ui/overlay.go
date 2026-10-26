@@ -27,7 +27,7 @@ func (m *Model) drawCard(cv *canvas) {
 	top, bottom := m.headRows(), m.h-m.footRows() // body rows
 	left, right := 2, m.w-2
 	areaW, areaH := right-left, bottom-top
-	cv.shade(0, top, m.w, bottom, 1-m.theme.Backdrop, art.RGB{})
+	cv.shade(0, 0, m.w, m.h, 1-m.theme.Backdrop, art.RGB{})
 	const padY = modalPadY
 	chrome := modalChromeW
 	artLines, artW := m.cardArt(i), art.CardW

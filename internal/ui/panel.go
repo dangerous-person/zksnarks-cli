@@ -143,7 +143,7 @@ func (p *panel) wheel(m *Model, b tea.MouseButton) {
 
 func (p *panel) click(m *Model, y int) {
 	i := p.scroll + y - 1
-	if y < 1 || i >= len(p.rows) || p.rows[i].heading != "" {
+	if y < 1 || y > p.listH(m) || i >= len(p.rows) || p.rows[i].heading != "" {
 		return
 	}
 	p.cursor = i
