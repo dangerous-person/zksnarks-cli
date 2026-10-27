@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -270,6 +271,32 @@ func (m *Model) contactCodes() []contactCode {
 		}
 	}
 	return m.contactQR
+}
+
+func Logo(glyph art.Glyph) []string {
+	var out []string
+	for y := 0; y+1 < len(contactFigure); y += 2 {
+		var b strings.Builder
+		for x := range contactFigure[y] {
+			top, bot := contactFigure[y][x] == '#', contactFigure[y+1][x] == '#'
+			switch {
+			case top && bot:
+				b.WriteString("\x1b[7m \x1b[27m")
+			case !top && !bot:
+				b.WriteString(" ")
+			case glyph == art.LowerFiveEighths && top:
+				b.WriteString("\x1b[7m▅\x1b[27m")
+			case glyph == art.LowerFiveEighths:
+				b.WriteString("▅")
+			case top:
+				b.WriteString("▀")
+			default:
+				b.WriteString("▄")
+			}
+		}
+		out = append(out, b.String())
+	}
+	return out
 }
 
 func (m *Model) qrLines(code *qr.Code, figure bool) []line {

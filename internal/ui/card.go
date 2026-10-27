@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/dangerous-person/zksnarks-cli/internal/art"
 	"github.com/dangerous-person/zksnarks-cli/internal/atlas"
 	"github.com/dangerous-person/zksnarks-cli/internal/search"
 )
@@ -54,8 +55,23 @@ func (m *Model) cardKey(k string) tea.Cmd {
 		}
 	case "a":
 		return m.tokenKey(k)
+	default:
+		if i, err := strconv.Atoi(strings.TrimPrefix(k, "trait:")); err == nil && strings.HasPrefix(k, "trait:") {
+			m.filterTrait(i)
+		}
 	}
 	return nil
+}
+
+func (m *Model) filterTrait(i int) {
+	t, ok := m.selected()
+	if !ok || i < 0 || i >= 5 {
+		return
+	}
+	m.input.set(search.Suggestion{Key: i, Value: t.Traits[i]}.Text())
+	m.card = false
+	m.refresh(true)
+	m.ensureVisible()
 }
 
 // zilkroadURL is the token's page on the marketplace.
@@ -136,12 +152,16 @@ func (m *Model) cardInfo(t *atlas.Token, w, h int, titled bool, ox, oy int) []li
 		out = append(out, m.historyView(t, w, h-len(out), ox, oy+len(out))...)
 		return out[:max(0, min(len(out), h))]
 	}
-	if heading, label := "TRAITS_", "Floor in ZEC"; width(heading)+2+width(label) <= w {
+	heading, label := "TRAITS_", "Floor in ZEC"
+	if m.printing {
+		heading = title(t)
+	}
+	if width(heading)+2+width(label) <= w {
 		add(leftRight(bold(m.theme.Text), heading, fg(m.theme.TraitFloor), label, w))
 	} else {
 		add(text(bold(m.theme.Text), heading))
 	}
-	for _, l := range m.traitGrid(t, w) {
+	for _, l := range m.traitGrid(t, w, ox, oy+len(out)) {
 		add(l)
 	}
 	add(line{})
@@ -209,7 +229,7 @@ func title(t *atlas.Token) string { return "zkSNARK #" + itoa(t.ID) + "_" }
 // and three rows of sections. Each trait section has the trait's name, its value, its share
 // of the live supply and the cheapest listing with that value; the sixth holds the rarity
 // rank and score. Narrow columns get one section per row.
-func (m *Model) traitGrid(t *atlas.Token, w int) []line {
+func (m *Model) traitGrid(t *atlas.Token, w, ox, oy int) []line {
 	cols := 2
 	if w < 36 {
 		cols = 1
@@ -254,9 +274,13 @@ func (m *Model) traitGrid(t *atlas.Token, w int) []line {
 					v := t.Traits[i]
 					switch k {
 					case 0:
+						y := oy + len(out)
+						m.keys = append(m.keys, keyRect{rect{ox + x0, y, ox + x0 + cw, y + 4}, "trait:" + itoa(i)})
 						r.put(fg(m.theme.Heading), clip(strings.ToUpper(atlas.TraitNames[i]), inner-2))
 						r.padTo(x0 + 1 + inner - 1)
-						r.put(fg(m.theme.Dim), "↗")
+						if !m.printing {
+							r.put(fg(m.theme.Dim), "↗")
+						}
 					case 1:
 						r.put(bold(m.theme.Text), clip(v, inner))
 					case 3:
@@ -286,7 +310,14 @@ func (m *Model) traitGrid(t *atlas.Token, w int) []line {
 
 // usdText is a ZEC amount in dollars at the live rate, or nothing without one.
 func (m *Model) usdText(amount string) string {
-	if p, ok := search.Price(amount); ok && m.rate != nil {
+	if p, ok := search.Price(amount); ok {
+		return m.usdOf(p)
+	}
+	return ""
+}
+
+func (m *Model) usdOf(p float64) string {
+	if m.rate != nil {
 		if s := usd(p * m.rate.ZecUsd); s != "" {
 			return "≈ " + s
 		}
@@ -354,4 +385,41 @@ func (m *Model) rankSection(r *row, t *atlas.Token, k, x0, inner int) {
 			}
 		}
 	}
+}
+
+func (m *Model) PrintCard(id int, data ...any) ([]string, bool) {
+	i, ok := m.byID[id]
+	if !ok {
+		return nil, false
+	}
+	live := m.applyPrinted(data)
+	t := &m.tokens[i]
+	m.printing = true
+	const infoW, gap, pad = 44, 3, 2
+	info := m.cardInfo(t, infoW, 1<<10, false, 0, 0)
+	info = m.cardInfo(t, infoW, len(info)-1, false, 0, 0)
+	info = info[:len(info)-1]
+	if !live {
+		info = append(info, line{}, text(fg(m.theme.Dim), "prices as of "+snapshotDate(m.opts.Atlas)))
+	}
+	artLines := m.cardArt(i)
+	if n := len(artLines) - len(info); n > 0 {
+		info = append(make([]line, n), info...)
+	}
+	w := pad + art.CardW + gap + infoW + pad
+	out := []string{onBg(strings.Repeat(" ", w), art.RGB{})}
+	for y := range max(len(artLines), len(info)) {
+		var r row
+		r.space(pad)
+		if y < len(artLines) {
+			r.cells(artLines[y], art.CardW)
+		}
+		r.padTo(pad + art.CardW + gap)
+		if y < len(info) {
+			r.cells(info[y].s, info[y].w)
+		}
+		r.padTo(w)
+		out = append(out, onBg(r.String(), art.RGB{}))
+	}
+	return append(out, out[0]), true
 }

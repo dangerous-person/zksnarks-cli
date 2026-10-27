@@ -2,12 +2,16 @@ package ui
 
 import (
 	"encoding/json"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dangerous-person/zksnarks-cli/internal/art"
+	"github.com/dangerous-person/zksnarks-cli/internal/market"
 	"github.com/dangerous-person/zksnarks-cli/internal/search"
 )
 
@@ -426,5 +430,187 @@ func TestArtCornerIsBlank(t *testing.T) {
 				t.Errorf("#%d has a pixel at %v, under the art size icon", tk.ID, p)
 			}
 		}
+	}
+}
+
+func TestPrintCard(t *testing.T) {
+	m := colourModel(t, Options{})
+	lines, ok := m.PrintCard(7724)
+	if !ok {
+		t.Fatal("no card for #7724")
+	}
+	plain := strings.Join(lines, "\n")
+	for strings.Contains(plain, "\x1b[") {
+		i := strings.Index(plain, "\x1b[")
+		j := i + 2
+		for j < len(plain) && (plain[j] < 0x40 || plain[j] > 0x7e) {
+			j++
+		}
+		plain = plain[:i] + plain[j+1:]
+	}
+	for _, want := range []string{"zkSNARK #7724_", "Floor in ZEC", "MARKET_", "prices as of"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{"[Z]", "[H]", "↗", "TRAITS_"} {
+		if strings.Contains(plain, unwanted) {
+			t.Errorf("has %q", unwanted)
+		}
+	}
+	rows := strings.Split(plain, "\n")
+	for i, r := range rows {
+		if width(r) != width(rows[0]) {
+			t.Fatalf("row %d is %d wide, the first %d", i, width(r), width(rows[0]))
+		}
+	}
+	if _, ok := m.PrintCard(10001); ok {
+		t.Error("a card for #10001")
+	}
+}
+
+func TestPrintBids(t *testing.T) {
+	snap := &market.Snapshot{Tokens: []market.Token{
+		{ID: 6991, Listed: true, Ask: "0.479", Bid: "0.38"},
+		{ID: 9615, Listed: true, Ask: "1", Bid: "0.8"},
+		{ID: 5519, Bid: "0.23"},
+		{ID: 3283, Listed: true, Ask: "0.87", Bid: "0.512"},
+	}}
+	rate := &market.Rate{ZecUsd: 1000}
+	for _, c := range []struct{ cols, per int }{{120, 4}, {90, 2}, {60, 2}, {0, 2}} {
+		lines := colourModel(t, Options{}).PrintBids(c.cols, snap, rate)
+		rows := strings.Split(sgr.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n")
+		plain := strings.Join(rows, "\n")
+		for _, want := range []string{"BIDS_", "https://zilkroad.com/bids", "ITEMS WITH BIDS:    4", "HIGHEST BID:        0.80 ZEC   ≈ $800", "AVERAGE BID:        0.481 ZEC  ≈ $481", "TOTAL OPEN VALUE:   1.922 ZEC  ≈ $1,922", "ASKING:  1.00 ZEC ≈ $1,000", "STATUS:  NOT FOR SALE", "RANK:"} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("%d columns: missing %q", c.cols, want)
+			}
+		}
+		if strings.Contains(plain, "prices as of") {
+			t.Errorf("%d columns: live prices marked as old", c.cols)
+		}
+		var order []int
+		for _, id := range []string{"#9615_", "#3283_", "#6991_", "#5519_"} {
+			for y, r := range rows {
+				if strings.Contains(r, id) {
+					order = append(order, y)
+				}
+			}
+		}
+		if len(order) != 4 || !slices.IsSorted(order) || order[c.per-1] != order[0] || c.per < 4 && order[c.per] == order[0] {
+			t.Errorf("%d columns: titles on rows %v, want %d a row by highest bid", c.cols, order, c.per)
+		}
+		for i, r := range rows {
+			if width(r) != width(rows[0]) || c.cols > 0 && width(r) > c.cols {
+				t.Fatalf("%d columns: row %d is %d wide, the first %d", c.cols, i, width(r), width(rows[0]))
+			}
+		}
+	}
+	many := &market.Snapshot{}
+	for id := 1; id <= 10; id++ {
+		many.Tokens = append(many.Tokens, market.Token{ID: id, Bid: market.Decimal(strconv.Itoa(id))})
+	}
+	plain := sgr.ReplaceAllString(strings.Join(colourModel(t, Options{}).PrintBids(120, many), "\n"), "")
+	if !strings.Contains(plain, "ITEMS WITH BIDS:    10") || !strings.Contains(plain, "TOTAL OPEN VALUE:   55.00 ZEC") {
+		t.Errorf("the stats do not count all ten bids:\n%s", plain)
+	}
+	for id := 1; id <= 10; id++ {
+		if shown := strings.Contains(plain, "#"+strconv.Itoa(id)+"_"); shown != (id > 1) {
+			t.Errorf("#%d shown %v, want the nine highest bids", id, shown)
+		}
+	}
+	plain = sgr.ReplaceAllString(strings.Join(colourModel(t, Options{}).PrintBids(100), "\n"), "")
+	if !strings.Contains(plain, "No open bids.") || !strings.Contains(plain, "prices as of") {
+		t.Errorf("without bids:\n%s", plain)
+	}
+}
+
+func TestPrintSales(t *testing.T) {
+	now := time.Now()
+	var sales []market.Sale
+	for n := range 12 {
+		sales = append(sales, market.Sale{ID: 100 + n, Price: "0.3", Time: now.Add(-time.Duration(n+1) * time.Hour).Format(time.RFC3339)})
+	}
+	sales[0], sales[11] = sales[11], sales[0]
+	sales = append(sales, market.Sale{ID: 10001, Price: "1", Time: now.Format(time.RFC3339)}, market.Sale{ID: 99, Price: "", Time: now.Format(time.RFC3339)})
+	stats := &market.Stats{Floor: "0.3797", MarketCap: "3540.3228", Sales24h: 12, SalesTotal: 5622, Volume24h: "4.44278", VolumeTotal: "6639.99395299"}
+	lines := colourModel(t, Options{}).PrintSales(120, sales, stats, &market.Rate{ZecUsd: 1000})
+	rows := strings.Split(sgr.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n")
+	plain := strings.Join(rows, "\n")
+	for _, want := range []string{"SALES_", "Last 9 completed zkSNARK trades on Zilkroad.", "https://zilkroad.com/sales", "FLOOR PRICE:    0.3797 ZEC", "MARKET CAP:     3,540 ZEC", "≈ $3,540,323", "24H SALES:      12", "TOTAL SALES:    5,622", "24H VOLUME:     4.443 ZEC", "TOTAL VOLUME:   6,640 ZEC", "PRICE:   0.30 ZEC ≈ $300", "SOLD:    1h ago"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(plain, "prices as of") || strings.Contains(plain, "#99_") || strings.Contains(plain, "#10001") {
+		t.Errorf("a stale note or a broken sale:\n%s", plain)
+	}
+	var stat []string
+	statW := 0
+	for _, r := range rows[5:12] {
+		f := strings.Fields(r)
+		stat = append(stat, strings.Join(f[:min(len(f), 2)], " "))
+		statW = max(statW, width(strings.TrimSpace(r)))
+	}
+	if want := []string{"24H SALES:", "24H VOLUME:", "FLOOR PRICE:", "", "TOTAL SALES:", "TOTAL VOLUME:", "MARKET CAP:"}; !slices.Equal(stat[:3], want[:3]) || !slices.Equal(stat[4:], want[4:]) || strings.TrimSpace(rows[8]) != strings.Repeat("-", statW) {
+		t.Errorf("stats %q, want the day, a rule as wide as the stats, then the totals", stat)
+	}
+	var order []int
+	for n := range 12 {
+		for y, r := range rows {
+			if strings.Contains(r, "#"+strconv.Itoa(100+n)+"_") {
+				order = append(order, y)
+				if n >= 9 {
+					t.Errorf("#%d shown, only the nine newest should be", 100+n)
+				}
+			}
+		}
+	}
+	if len(order) != 9 || !slices.IsSorted(order) || order[2] != order[0] || order[3] == order[0] {
+		t.Errorf("titles on rows %v, want nine newest first, three a row", order)
+	}
+	plain = sgr.ReplaceAllString(strings.Join(colourModel(t, Options{}).PrintSales(120, nil), "\n"), "")
+	if !strings.Contains(plain, "No sales yet.") || strings.Contains(plain, "FLOOR PRICE") {
+		t.Errorf("without sales or stats:\n%s", plain)
+	}
+}
+
+func TestTraitArrowFilters(t *testing.T) {
+	m := colourModel(t, Options{})
+	openZilkroad(m, false)
+	m.sel = 11
+	id := m.tokens[m.results[m.sel]].ID
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.card {
+		t.Fatal("card not open")
+	}
+	var x, y int
+	for row, l := range plainView(m) {
+		if strings.Contains(l, "LINEAGE") && strings.Contains(l, "SKIN") {
+			rs := []rune(l)
+			for i := len(rs) - 1; i >= 0; i-- {
+				if rs[i] == '↗' {
+					x, y = i, row
+					break
+				}
+			}
+		}
+	}
+	if y == 0 {
+		t.Fatal("no arrow on screen")
+	}
+	m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	skin := m.tokens[m.byID[id]].Traits[1]
+	if m.card || m.input.text != (search.Suggestion{Key: 1, Value: skin}).Text() || m.tokens[m.results[m.sel]].ID != id {
+		t.Fatalf("after the click: card %v, query %q, selected #%d (want #%d)", m.card, m.input.text, m.tokens[m.results[m.sel]].ID, id)
+	}
+	for _, r := range m.results {
+		if m.tokens[r].Traits[1] != skin {
+			t.Fatalf("#%d has skin %q", m.tokens[r].ID, m.tokens[r].Traits[1])
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.input.text != "" {
+		t.Fatalf("esc left %q", m.input.text)
 	}
 }

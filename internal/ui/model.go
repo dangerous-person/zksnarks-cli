@@ -127,6 +127,7 @@ type Model struct {
 	thumbs   map[int][]string
 	swatches map[int]art.RGB
 	artSize  artSize
+	printing bool
 	skins    map[[2]string]map[art.RGB]bool
 
 	stats     *market.Stats

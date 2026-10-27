@@ -154,6 +154,23 @@ func TestETag(t *testing.T) {
 	}
 }
 
+func TestSales(t *testing.T) {
+	cl := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/market/sales" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"at":"2026-10-27T17:55:12Z","sales":[{"id":1409,"price":"0.399","time":"2026-10-27T17:21:28.166Z","buyer":null,"via":"ask"}],"next":"r.1"}`))
+	})
+	s, err := cl.Sales(context.Background())
+	if err != nil || len(s) != 1 || s[0] != (Sale{ID: 1409, Price: "0.399", Time: "2026-10-27T17:21:28.166Z"}) {
+		t.Fatalf("got %+v, %v", s, err)
+	}
+	if _, err := New(true).Sales(context.Background()); !errors.Is(err, ErrOffline) {
+		t.Errorf("offline: %v", err)
+	}
+}
+
 func TestNotModifiedWithoutETag(t *testing.T) {
 	cl := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)

@@ -85,6 +85,8 @@ type Stats struct {
 	Sales24h    int     `json:"sales24h"`
 	Volume24h   Decimal `json:"volume24hZec"`
 	VolumeTotal Decimal `json:"volumeTotalZec"`
+	MarketCap   Decimal `json:"marketCapZec"`
+	SalesTotal  int     `json:"salesTotal"`
 	Supply      int     `json:"supply"`
 	Purged      int     `json:"purged"`
 	UpdatedAt   string  `json:"updatedAt"`
@@ -101,6 +103,13 @@ type Rate struct {
 type Event struct {
 	ID    int     `json:"id"`
 	Type  string  `json:"type"` // listed, delisted, sold, offer-made
+	Price Decimal `json:"price"`
+	Time  string  `json:"time"`
+}
+
+// Sale is one entry of /api/market/sales.
+type Sale struct {
+	ID    int     `json:"id"`
 	Price Decimal `json:"price"`
 	Time  string  `json:"time"`
 }
@@ -268,6 +277,17 @@ func (c *Client) Events(ctx context.Context, etag string) ([]Event, string, erro
 		return nil, tag, err
 	}
 	return e.Events, tag, nil
+}
+
+// Sales fetches the latest sales, newest first.
+func (c *Client) Sales(ctx context.Context) ([]Sale, error) {
+	var s struct {
+		Sales []Sale `json:"sales"`
+	}
+	if _, err := c.get(ctx, "/api/market/sales", "", bodyCap, &s); err != nil {
+		return nil, err
+	}
+	return s.Sales, nil
 }
 
 // History fetches one token's provenance, oldest first. This request tells the server which
