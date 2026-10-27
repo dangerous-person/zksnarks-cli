@@ -35,7 +35,7 @@ func (m *Model) PrintSales(cols int, sales []market.Sale, data ...any) []string 
 		head = append(head, m.statLines([][3]string{
 			{"24H SALES:", comma(s.Sales24h), ""},
 			{"24H VOLUME:", statZec(string(s.Volume24h)), m.usdText(string(s.Volume24h))},
-			{"FLOOR PRICE:", statZec(string(s.Floor)), m.usdText(string(s.Floor))},
+			{"FLOOR PRICE:", priceZec(string(s.Floor)), m.usdText(string(s.Floor))},
 		}, [][3]string{
 			{"TOTAL SALES:", comma(s.SalesTotal), ""},
 			{"TOTAL VOLUME:", statZec(string(s.VolumeTotal)), m.usdText(string(s.VolumeTotal))},

@@ -18,10 +18,10 @@ func (m *Model) cardKey(k string) tea.Cmd {
 		case "esc", "backspace":
 			m.histFor = 0
 			return nil
-		case "up", "k":
+		case "up":
 			m.histTop--
 			return nil
-		case "down", "j":
+		case "down":
 			m.histTop++
 			return nil
 		case "pgup", "ctrl+b", "ctrl+u":
@@ -36,11 +36,11 @@ func (m *Model) cardKey(k string) tea.Cmd {
 	case "esc", "backspace", "enter":
 		m.card = false
 		m.ensureVisible()
-	case "left", "k", "up":
+	case "left", "up":
 		if m.sel > 0 {
 			m.sel--
 		}
-	case "right", "l", "j", "down":
+	case "right", "down":
 		if m.sel < len(m.results)-1 {
 			m.sel++
 		}
@@ -116,7 +116,9 @@ func (m *Model) cardKeys(y, ox, oy, w int, pairs ...[3]string) line {
 	if l.w > w {
 		l, keys = draw(2)
 	}
-	m.keys = append(m.keys, keys...)
+	if !m.printing {
+		m.keys = append(m.keys, keys...)
+	}
 	return l
 }
 
@@ -274,8 +276,10 @@ func (m *Model) traitGrid(t *atlas.Token, w, ox, oy int) []line {
 					v := t.Traits[i]
 					switch k {
 					case 0:
-						y := oy + len(out)
-						m.keys = append(m.keys, keyRect{rect{ox + x0, y, ox + x0 + cw, y + 4}, "trait:" + itoa(i)})
+						if !m.printing {
+							y := oy + len(out)
+							m.keys = append(m.keys, keyRect{rect{ox + x0, y, ox + x0 + cw, y + 4}, "trait:" + itoa(i)})
+						}
 						r.put(fg(m.theme.Heading), clip(strings.ToUpper(atlas.TraitNames[i]), inner-2))
 						r.padTo(x0 + 1 + inner - 1)
 						if !m.printing {
@@ -287,7 +291,7 @@ func (m *Model) traitGrid(t *atlas.Token, w, ox, oy int) []line {
 						share := percent2(m.ix.Cat.Counts[i][v], supply)
 						f := "-"
 						if p, ok := m.floors[i][v]; ok {
-							f = strconv.FormatFloat(p, 'f', -1, 64) + " ZEC"
+							f = zecFloat(p) + " ZEC"
 						}
 						r.put(fg(m.theme.Dim), share)
 						if width(share)+1+width(f) <= inner {
@@ -317,7 +321,7 @@ func (m *Model) usdText(amount string) string {
 }
 
 func (m *Model) usdOf(p float64) string {
-	if m.rate != nil {
+	if m.rate != nil && m.rate.ZecUsd > 0 {
 		if s := usd(p * m.rate.ZecUsd); s != "" {
 			return "≈ " + s
 		}
@@ -387,7 +391,7 @@ func (m *Model) rankSection(r *row, t *atlas.Token, k, x0, inner int) {
 	}
 }
 
-func (m *Model) PrintCard(id int, data ...any) ([]string, bool) {
+func (m *Model) PrintCard(cols, id int, data ...any) ([]string, bool) {
 	i, ok := m.byID[id]
 	if !ok {
 		return nil, false
@@ -403,10 +407,29 @@ func (m *Model) PrintCard(id int, data ...any) ([]string, bool) {
 		info = append(info, line{}, text(fg(m.theme.Dim), "prices as of "+snapshotDate(m.opts.Atlas)))
 	}
 	artLines := m.cardArt(i)
+	w := pad + art.CardW + gap + infoW + pad
+	if cols > 0 && cols < w {
+		w = pad + max(art.CardW, infoW) + pad
+		blank := onBg(strings.Repeat(" ", w), art.RGB{})
+		out := []string{blank}
+		for y := range len(artLines) + 1 + len(info) {
+			var r row
+			r.space(pad)
+			switch {
+			case y < len(artLines):
+				r.cells(artLines[y], art.CardW)
+			case y > len(artLines):
+				l := info[y-len(artLines)-1]
+				r.cells(l.s, l.w)
+			}
+			r.padTo(w)
+			out = append(out, onBg(r.String(), art.RGB{}))
+		}
+		return append(out, blank), true
+	}
 	if n := len(artLines) - len(info); n > 0 {
 		info = append(make([]line, n), info...)
 	}
-	w := pad + art.CardW + gap + infoW + pad
 	out := []string{onBg(strings.Repeat(" ", w), art.RGB{})}
 	for y := range max(len(artLines), len(info)) {
 		var r row

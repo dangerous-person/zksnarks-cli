@@ -20,9 +20,9 @@ func (m *Model) manifestoKey(k string) tea.Cmd {
 	switch k {
 	case "esc", "backspace", "enter":
 		m.reading = false
-	case "up", "k":
+	case "up":
 		m.readTop--
-	case "down", "j":
+	case "down":
 		m.readTop++
 	case "pgup", "ctrl+b", "ctrl+u":
 		m.readTop -= page

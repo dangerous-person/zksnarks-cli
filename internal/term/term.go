@@ -4,6 +4,7 @@
 package term
 
 import (
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/colorprofile"
@@ -23,6 +24,9 @@ func Color(flag string, env Env) colorprofile.Profile {
 		return colorprofile.TrueColor
 	case "256":
 		return colorprofile.ANSI256
+	}
+	if runtime.GOOS == "windows" {
+		return colorprofile.TrueColor
 	}
 	if strings.HasPrefix(env("TERM"), "screen") && env("TMUX") == "" {
 		return colorprofile.ANSI256
@@ -64,6 +68,9 @@ func otherTerminal(env Env) bool {
 
 func program(env Env) string {
 	p := env("TERM_PROGRAM")
+	if (p == "tmux" || p == "screen") && env("__CFBundleIdentifier") == "com.apple.Terminal" {
+		p = "Apple_Terminal"
+	}
 	if p == "Apple_Terminal" && otherTerminal(env) {
 		return ""
 	}

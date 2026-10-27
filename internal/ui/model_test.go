@@ -434,38 +434,47 @@ func TestArtCornerIsBlank(t *testing.T) {
 }
 
 func TestPrintCard(t *testing.T) {
-	m := colourModel(t, Options{})
-	lines, ok := m.PrintCard(7724)
-	if !ok {
-		t.Fatal("no card for #7724")
-	}
-	plain := strings.Join(lines, "\n")
-	for strings.Contains(plain, "\x1b[") {
-		i := strings.Index(plain, "\x1b[")
-		j := i + 2
-		for j < len(plain) && (plain[j] < 0x40 || plain[j] > 0x7e) {
-			j++
+	for _, c := range []struct{ cols, w int }{{0, 103}, {120, 103}, {103, 103}, {102, 56}, {80, 56}} {
+		m := colourModel(t, Options{})
+		lines, ok := m.PrintCard(c.cols, 7724)
+		if !ok {
+			t.Fatal("no card for #7724")
 		}
-		plain = plain[:i] + plain[j+1:]
-	}
-	for _, want := range []string{"zkSNARK #7724_", "Floor in ZEC", "MARKET_", "prices as of"} {
-		if !strings.Contains(plain, want) {
-			t.Errorf("missing %q", want)
+		plain := strings.Join(lines, "\n")
+		for strings.Contains(plain, "\x1b[") {
+			i := strings.Index(plain, "\x1b[")
+			j := i + 2
+			for j < len(plain) && (plain[j] < 0x40 || plain[j] > 0x7e) {
+				j++
+			}
+			plain = plain[:i] + plain[j+1:]
 		}
-	}
-	for _, unwanted := range []string{"[Z]", "[H]", "↗", "TRAITS_"} {
-		if strings.Contains(plain, unwanted) {
-			t.Errorf("has %q", unwanted)
+		for _, want := range []string{"zkSNARK #7724_", "Floor in ZEC", "MARKET_", "prices as of"} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("%d columns: missing %q", c.cols, want)
+			}
 		}
-	}
-	rows := strings.Split(plain, "\n")
-	for i, r := range rows {
-		if width(r) != width(rows[0]) {
-			t.Fatalf("row %d is %d wide, the first %d", i, width(r), width(rows[0]))
+		for _, unwanted := range []string{"[Z]", "[H]", "↗", "TRAITS_"} {
+			if strings.Contains(plain, unwanted) {
+				t.Errorf("%d columns: has %q", c.cols, unwanted)
+			}
 		}
-	}
-	if _, ok := m.PrintCard(10001); ok {
-		t.Error("a card for #10001")
+		rows := strings.Split(plain, "\n")
+		for i, r := range rows {
+			if width(r) != c.w {
+				t.Fatalf("%d columns: row %d is %d wide, want %d", c.cols, i, width(r), c.w)
+			}
+		}
+		head := slices.IndexFunc(rows, func(r string) bool { return strings.Contains(r, "zkSNARK #7724_") })
+		if stacked := head > art.CardH; stacked != (c.w == 56) {
+			t.Errorf("%d columns: title on row %d, want it %s the art", c.cols, head, map[bool]string{true: "under", false: "beside"}[c.w == 56])
+		}
+		if len(m.keys) != 0 {
+			t.Errorf("%d columns: printing left %d click areas", c.cols, len(m.keys))
+		}
+		if _, ok := m.PrintCard(c.cols, 10001); ok {
+			t.Error("a card for #10001")
+		}
 	}
 }
 
@@ -481,7 +490,7 @@ func TestPrintBids(t *testing.T) {
 		lines := colourModel(t, Options{}).PrintBids(c.cols, snap, rate)
 		rows := strings.Split(sgr.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n")
 		plain := strings.Join(rows, "\n")
-		for _, want := range []string{"BIDS_", "https://zilkroad.com/bids", "ITEMS WITH BIDS:    4", "HIGHEST BID:        0.80 ZEC   ≈ $800", "AVERAGE BID:        0.481 ZEC  ≈ $481", "TOTAL OPEN VALUE:   1.922 ZEC  ≈ $1,922", "ASKING:  1.00 ZEC ≈ $1,000", "STATUS:  NOT FOR SALE", "RANK:"} {
+		for _, want := range []string{"BIDS_", "https://zilkroad.com/bids", "ITEMS WITH BIDS:    4", "HIGHEST BID:        0.80 ZEC   ≈ $800", "AVERAGE OPEN BID:   0.481 ZEC  ≈ $481", "TOTAL OPEN VALUE:   1.922 ZEC  ≈ $1,922", "ASKING:  1.00 ZEC ≈ $1,000", "STATUS:  NOT FOR SALE", "RANK:"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%d columns: missing %q", c.cols, want)
 			}
@@ -520,7 +529,7 @@ func TestPrintBids(t *testing.T) {
 		}
 	}
 	plain = sgr.ReplaceAllString(strings.Join(colourModel(t, Options{}).PrintBids(100), "\n"), "")
-	if !strings.Contains(plain, "No open bids.") || !strings.Contains(plain, "prices as of") {
+	if !strings.Contains(plain, "No active bids.") || !strings.Contains(plain, "prices as of") {
 		t.Errorf("without bids:\n%s", plain)
 	}
 }

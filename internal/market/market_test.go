@@ -2,6 +2,8 @@ package market
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -30,6 +32,39 @@ func serve(t *testing.T, h http.HandlerFunc) *Client {
 	c := New(false)
 	c.HTTP.Transport = toServer{strings.TrimPrefix(ts.URL, "http://"), ts.Client().Transport}
 	return c
+}
+
+type toTLS struct {
+	host string
+	rt   http.RoundTripper
+}
+
+func (t toTLS) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.URL.Host = t.host
+	return t.rt.RoundTrip(r)
+}
+
+func TestHTTP1(t *testing.T) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"zecUsd":` + strconv.Itoa(r.ProtoMajor) + `}`))
+	}))
+	ts.EnableHTTP2 = true
+	ts.StartTLS()
+	t.Cleanup(ts.Close)
+	c := New(false)
+	tr := c.HTTP.Transport.(*http.Transport)
+	roots := x509.NewCertPool()
+	roots.AddCert(ts.Certificate())
+	tr.TLSClientConfig = &tls.Config{RootCAs: roots}
+	c.HTTP.Transport = toTLS{strings.TrimPrefix(ts.URL, "https://"), tr}
+	r, _, err := c.Rate(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ZecUsd != 1 {
+		t.Errorf("spoke HTTP/%v to a server that offers HTTP/2, want HTTP/1.1", r.ZecUsd)
+	}
 }
 
 func TestRedirects(t *testing.T) {
@@ -184,7 +219,8 @@ func TestDecimalRejectsJunk(t *testing.T) {
 	cases := map[string]Decimal{
 		`"2.45"`: "2.45", `3`: "3", `"10"`: "10", `null`: "",
 		`"NaN"`: "", `"0x1p-2"`: "", `"1e3"`: "", `"1_000"`: "", `".5"`: "", `"5."`: "", `"-1"`: "",
-		`"` + strings.Repeat("9", 40) + `"`: "",
+		`"` + strings.Repeat("9", 40) + `"`: "", `"` + strings.Repeat("9", 10) + `"`: "", `"999999999.5"`: "999999999.5",
+		`"00.5"`: "0.5", `"007"`: "7", `"0"`: "0", `"000"`: "0",
 	}
 	for in, want := range cases {
 		var d Decimal

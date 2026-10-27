@@ -60,10 +60,11 @@ func TestRoundInt(t *testing.T) {
 
 func TestAmounts(t *testing.T) {
 	cases := []struct {
-		in, usd, volume, short string
+		in, usd, volume, stat string
 	}{
-		{"6627.73217299", "≈ $6,628", "6,628 ZEC", "6627.73"},
-		{"10.88", "≈ $11", "11 ZEC", "10.88"},
+		{"6627.73217299", "≈ $6,628", "6,628 ZEC", "6,628 ZEC"},
+		{"10.88", "≈ $11", "11 ZEC", "10.88 ZEC"},
+		{"5.57278", "≈ $6", "6 ZEC", "5.573 ZEC"},
 		{"NaN", "", "", ""},
 		{"Infinity", "", "", ""},
 		{"-Infinity", "", "", ""},
@@ -81,8 +82,8 @@ func TestAmounts(t *testing.T) {
 		if got := m.volumeText(); got != c.volume {
 			t.Errorf("volumeText(%q) = %q, want %q", c.in, got, c.volume)
 		}
-		if got := zecShort(c.in); got != c.short {
-			t.Errorf("zecShort(%q) = %q, want %q", c.in, got, c.short)
+		if got := statZec(c.in); got != c.stat {
+			t.Errorf("statZec(%q) = %q, want %q", c.in, got, c.stat)
 		}
 	}
 	for _, f := range []float64{1e300, -1e300, math.NaN(), math.Inf(1), math.Inf(-1)} {
@@ -91,6 +92,14 @@ func TestAmounts(t *testing.T) {
 		}
 		if got := trimFloat(f); got != "" {
 			t.Errorf("trimFloat(%v) = %q, want empty", f, got)
+		}
+	}
+}
+
+func TestTruncateCutEscape(t *testing.T) {
+	for _, s := range []string{"\x1b", "abc\x1b[", "abc\x1b[38;2;1;2"} {
+		if got := truncate(line{s, 10}, 2); got.w > 2 {
+			t.Errorf("truncate(%q) = %q, %d wide", s, got.s, got.w)
 		}
 	}
 }

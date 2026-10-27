@@ -269,6 +269,7 @@ func truncate(l line, n int) line {
 			for j < len(l.s) && !(l.s[j] >= 0x40 && l.s[j] <= 0x7e && j > i+1) {
 				j++
 			}
+			j = min(j, len(l.s)-1)
 			b.WriteString(l.s[i : j+1])
 			i = j + 1
 			continue

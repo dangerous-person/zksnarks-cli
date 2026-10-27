@@ -16,10 +16,13 @@ import (
 	"time"
 )
 
-const (
-	Origin    = "https://zilkroad.com"
-	UserAgent = "zksnarks-cli/0.1 (unofficial; +https://github.com/dangerous-person/zksnarks-cli)"
-)
+const Origin = "https://zilkroad.com"
+
+var Version = "dev"
+
+func userAgent() string {
+	return "zksnarks-cli/" + Version + " (unofficial; +https://github.com/dangerous-person/zksnarks-cli)"
+}
 
 // Decimal is a ZEC amount; the API writes amounts as strings, sometimes as numbers or null.
 type Decimal string
@@ -45,15 +48,24 @@ func decimal(s string) Decimal {
 	if len(s) > 32 {
 		return ""
 	}
-	dot := false
+	dot, whole := false, 0
 	for i, c := range s {
 		switch {
 		case c >= '0' && c <= '9':
+			if !dot {
+				whole++
+			}
 		case c == '.' && !dot && i > 0 && i < len(s)-1:
 			dot = true
 		default:
 			return ""
 		}
+	}
+	if whole > 9 {
+		return ""
+	}
+	for len(s) > 1 && s[0] == '0' && s[1] != '.' {
+		s = s[1:]
 	}
 	return Decimal(s)
 }
@@ -178,7 +190,11 @@ const (
 
 // New returns a client with sensible timeouts.
 func New(offline bool) *Client {
-	return &Client{HTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: checkRedirect}, Offline: offline}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = nil
+	t.Protocols = new(http.Protocols)
+	t.Protocols.SetHTTP1(true)
+	return &Client{HTTP: &http.Client{Timeout: 20 * time.Second, Transport: t, CheckRedirect: checkRedirect}, Offline: offline}
 }
 
 func checkRedirect(req *http.Request, via []*http.Request) error {
@@ -208,7 +224,7 @@ func (c *Client) get(ctx context.Context, path, etag string, limit int64, v any)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", userAgent())
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}

@@ -128,6 +128,7 @@ type Model struct {
 	swatches map[int]art.RGB
 	artSize  artSize
 	printing bool
+	printed  *market.Snapshot
 	skins    map[[2]string]map[art.RGB]bool
 
 	stats     *market.Stats
@@ -476,10 +477,7 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "z", "a", "H", "shift+h":
 		return m.tokenKey(k)
 	case "h":
-		if m.mode == modeList {
-			return m.tokenKey(k)
-		}
-		m.move(k)
+		return m.tokenKey(k)
 	case "+", "=", "-":
 		if m.mode == modeList {
 			m.resizeArt(k != "-")
@@ -637,17 +635,17 @@ func (m *Model) move(k string) {
 		page = max(1, m.bodyH()/pitch) * cols
 	}
 	switch k {
-	case "left", "h":
+	case "left":
 		if m.mode == modeGallery {
 			m.sel--
 		}
-	case "right", "l":
+	case "right":
 		if m.mode == modeGallery {
 			m.sel++
 		}
-	case "up", "k":
+	case "up":
 		m.sel -= cols
-	case "down", "j":
+	case "down":
 		if m.sel+cols < n {
 			m.sel += cols
 		} else if m.sel/cols < (n-1)/cols {

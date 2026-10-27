@@ -275,6 +275,9 @@ func (m *Model) apply(v any) bool {
 
 func (m *Model) applySnapshot(s *market.Snapshot) bool {
 	at, timed := parseTime(s.At)
+	if timed && at.After(time.Now().Add(5*time.Minute)) {
+		timed = false
+	}
 	if timed && at.Before(m.snapAt) {
 		return false
 	}
@@ -408,8 +411,8 @@ func (m *Model) marketParts() []line {
 		parts = append(parts, part("floor ", zecFloat(m.floor)+" ZEC"))
 	}
 	if s := m.stats; s != nil {
-		if v := zecShort(string(s.Volume24h)); v != "" {
-			parts = append(parts, part("24h: ", itoa(s.Sales24h), " sales, ", v+" ZEC"))
+		if v := statZec(string(s.Volume24h)); v != "" {
+			parts = append(parts, part("24h: ", itoa(s.Sales24h), " sales, ", v))
 		} else {
 			parts = append(parts, part("24h: ", itoa(s.Sales24h), " sales"))
 		}
@@ -420,14 +423,6 @@ func (m *Model) marketParts() []line {
 		}
 	}
 	return parts
-}
-
-func zecShort(s string) string {
-	p, ok := search.Price(s)
-	if !ok {
-		return ""
-	}
-	return trimFloat(p)
 }
 
 func (m *Model) statusLine() line { return m.statusLines()[0] }
@@ -451,7 +446,7 @@ func (m *Model) statusLines() []line {
 		if m.feeds[feedSnapshot].applied {
 			since = m.marketAt.Format("15:04")
 		}
-		what := parts(fg(m.theme.Warn), "can't reach zilkroad", "prices as of "+since)
+		what := parts(fg(m.theme.Warn), "can't reach Zilkroad", "prices as of "+since)
 		full := append(append([]line{}, what...), m.hints("r", "retry"))
 		return []line{m.tildes(full, m.w), m.tildes(what, m.w), what[0]}
 	}

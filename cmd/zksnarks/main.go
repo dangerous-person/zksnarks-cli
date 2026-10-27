@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +41,18 @@ import (
 	"github.com/dangerous-person/zksnarks-cli/internal/ui"
 )
 
-var version = "0.1.0-dev"
+var version string
+
+func versionText() string {
+	v := version
+	if bi, ok := debug.ReadBuildInfo(); v == "" && ok && bi.Main.Version != "(devel)" {
+		v = bi.Main.Version
+	}
+	if v == "" {
+		return "dev"
+	}
+	return strings.TrimPrefix(v, "v")
+}
 
 func main() {
 	fs := flag.NewFlagSet("zksnarks", flag.ContinueOnError)
@@ -59,8 +71,9 @@ func main() {
 		printHelp(os.Stderr, *colorFlag, *glyphFlag)
 		os.Exit(2)
 	}
+	market.Version = versionText()
 	if *showVersion {
-		fmt.Println("zksnarks", version)
+		fmt.Println("zksnarks", versionText())
 		return
 	}
 	profile := term.Color(*colorFlag, os.Getenv)
@@ -69,6 +82,10 @@ func main() {
 		pf := flag.NewFlagSet("print", flag.ExitOnError)
 		card := pf.Bool("card", false, "print the card: the big art with the traits and the market next to it")
 		pf.Parse(fs.Args()[1:])
+		if pf.NArg() == 0 {
+			fmt.Fprintln(os.Stderr, "zksnarks: print needs token numbers, like zksnarks print 7724")
+			os.Exit(2)
+		}
 		if err := printTokens(pf.Args(), *card, profile, glyph, *offline); err != nil {
 			fmt.Fprintln(os.Stderr, "zksnarks:", err)
 			os.Exit(1)
@@ -86,7 +103,7 @@ func main() {
 			printHelp(os.Stdout, *colorFlag, *glyphFlag)
 			return
 		case "version":
-			fmt.Println("zksnarks", version)
+			fmt.Println("zksnarks", versionText())
 			return
 		}
 		if err := commands[cmd](profile, glyph, *offline); err != nil {
@@ -137,7 +154,9 @@ func main() {
 		os.Exit(1)
 	}
 	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Color: profile, NoColor: os.Getenv("NO_COLOR") != "", Client: market.New(*offline), State: loadState(), Query: *query, Media: files})
+	fmt.Print("\x1b[22;0t")
 	final, err := tea.NewProgram(m, opts...).Run()
+	fmt.Print("\x1b[23;0t")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
 		os.Exit(1)
@@ -164,7 +183,7 @@ func printHelp(f *os.File, color, glyph string) {
 		{"zksnarks", "launch explorer"},
 		{"zksnarks 7724", "print the card of zkSNARK #7724"},
 		{"zksnarks random", "print the card of a random zkSNARK"},
-		{"zksnarks bids", "print the zkSNARKs with open bids"},
+		{"zksnarks bids", "print the zkSNARKs with active bids"},
 		{"zksnarks sales", "print the latest sales"},
 		{"zksnarks version", "print the version"},
 		{"zksnarks help", "show this help"},
@@ -177,6 +196,9 @@ func printHelp(f *os.File, color, glyph string) {
 	if profile != colorprofile.NoTTY && cols >= logoW+logoGap+w {
 		logo = ui.Logo(term.Glyph(glyph, os.Getenv))
 		w += logoW + logoGap
+	}
+	if cols > 0 {
+		w = min(w, cols)
 	}
 	rule := quiet + strings.Repeat("-", w) + reset
 	var b strings.Builder
@@ -247,15 +269,18 @@ func printCards(a *atlas.Atlas, ids []int, profile colorprofile.Profile, glyph a
 	if err != nil {
 		return err
 	}
-	data := liveData(client)
+	data, _ := liveData(client)
 	for _, id := range ids {
-		lines, _ := m.PrintCard(id, data...)
+		lines, _ := m.PrintCard(termCols(), id, data...)
 		printPanel(profile, lines)
 	}
 	return nil
 }
 
 func printBids(profile colorprofile.Profile, glyph art.Glyph, offline bool) error {
+	if offline {
+		return errors.New("bids come from Zilkroad, run it without -offline")
+	}
 	a, err := embedded.Load()
 	if err != nil {
 		return err
@@ -264,13 +289,17 @@ func printBids(profile colorprofile.Profile, glyph art.Glyph, offline bool) erro
 	if err != nil {
 		return err
 	}
-	printPanel(profile, m.PrintBids(termCols(), liveData(client)...))
+	data, err := liveData(client)
+	if err != nil {
+		return errUnreachable
+	}
+	printPanel(profile, m.PrintBids(termCols(), data...))
 	return nil
 }
 
 func printSales(profile colorprofile.Profile, glyph art.Glyph, offline bool) error {
 	if offline {
-		return errors.New("sales come from zilkroad, run it without -offline")
+		return errors.New("sales come from Zilkroad, run it without -offline")
 	}
 	a, err := embedded.Load()
 	if err != nil {
@@ -280,13 +309,17 @@ func printSales(profile colorprofile.Profile, glyph art.Glyph, offline bool) err
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	sales, err := client.Sales(ctx)
 	if err != nil {
-		return fmt.Errorf("can't reach zilkroad: %w", err)
+		return errUnreachable
 	}
-	var data []any
+	snap, _, err := client.Snapshot(ctx, "")
+	if err != nil {
+		return errUnreachable
+	}
+	data := []any{snap}
 	if s, _, err := client.Stats(ctx, ""); err == nil {
 		data = append(data, s)
 	}
@@ -306,17 +339,20 @@ func printModel(a *atlas.Atlas, profile colorprofile.Profile, glyph art.Glyph, o
 	return ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Color: profile, NoColor: os.Getenv("NO_COLOR") != "", Client: client, State: loadState()}), client, nil
 }
 
-func liveData(client *market.Client) []any {
+var errUnreachable = errors.New("can't reach Zilkroad")
+
+func liveData(client *market.Client) ([]any, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	var data []any
-	if s, _, err := client.Snapshot(ctx, ""); err == nil {
-		data = append(data, s)
+	s, _, err := client.Snapshot(ctx, "")
+	if err != nil {
+		return nil, err
 	}
+	data := []any{s}
 	if r, _, err := client.Rate(ctx, ""); err == nil {
 		data = append(data, r)
 	}
-	return data
+	return data, nil
 }
 
 func termCols() int {

@@ -59,9 +59,9 @@ func (m *Model) networkKey(k string) tea.Cmd {
 	}
 	page := max(1, m.bodyH()-2)
 	switch k {
-	case "up", "k":
+	case "up":
 		m.selectSpot(m.spot - 1)
-	case "down", "j":
+	case "down":
 		m.selectSpot(m.spot + 1)
 	case "home", "g":
 		m.selectSpot(0)

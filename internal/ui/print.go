@@ -13,9 +13,15 @@ import (
 func (m *Model) applyPrinted(data []any) bool {
 	live := false
 	for _, v := range data {
-		if _, ok := v.(*market.Snapshot); ok {
-			live = m.apply(v)
-		} else {
+		s, ok := v.(*market.Snapshot)
+		switch {
+		case ok && s == m.printed:
+			live = true
+		case ok:
+			if live = m.apply(v); live {
+				m.printed = s
+			}
+		default:
 			m.apply(v)
 		}
 	}
@@ -28,16 +34,22 @@ func roundZec(f float64) string {
 
 func statZec(s string) string {
 	p, ok := search.Price(s)
-	if !ok {
+	if !ok || p < 0 {
 		return ""
 	}
 	if p >= 1000 {
-		if n, ok := roundInt(p); ok {
-			return comma(n) + " ZEC"
+		n, ok := roundInt(p)
+		if !ok {
+			return ""
 		}
+		return comma(n) + " ZEC"
 	}
-	if i := strings.IndexByte(s, '.'); i >= 0 && len(s)-i-1 > 4 {
-		return roundZec(p) + " ZEC"
+	return roundZec(p) + " ZEC"
+}
+
+func priceZec(s string) string {
+	if !priced(s) {
+		return ""
 	}
 	return zec(s) + " ZEC"
 }

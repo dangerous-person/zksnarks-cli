@@ -76,7 +76,7 @@ func TestStatusStrip(t *testing.T) {
 	m := onlineModel(t)
 	built := snapshotDate(m.opts.Atlas)
 	down := errors.New("connection refused")
-	errText := "can't reach zilkroad ~ prices as of " + built + " ~ [R] RETRY"
+	errText := "can't reach Zilkroad ~ prices as of " + built + " ~ [R] RETRY"
 	check := func(step, left, right string) {
 		t.Helper()
 		l, r := strip(m)
@@ -118,9 +118,9 @@ func TestStatusStrip(t *testing.T) {
 	m.fetch(feedEvents)
 	check("background poll", live, "works 9,324 ~ volume 6,628 ZEC")
 	answer(m, feedEvents, nil, down)
-	check("poll failed", live, "can't reach zilkroad ~ prices as of "+m.marketAt.Format("15:04")+" ~ [R] RETRY")
+	check("poll failed", live, "can't reach Zilkroad ~ prices as of "+m.marketAt.Format("15:04")+" ~ [R] RETRY")
 	m.fetch(feedEvents)
-	check("retry in background", live, "can't reach zilkroad ~ prices as of "+m.marketAt.Format("15:04")+" ~ [R] RETRY")
+	check("retry in background", live, "can't reach Zilkroad ~ prices as of "+m.marketAt.Format("15:04")+" ~ [R] RETRY")
 	answer(m, feedEvents, nil, market.ErrNotModified)
 	check("not modified", live, "works 9,324 ~ volume 6,628 ZEC")
 
@@ -128,7 +128,7 @@ func TestStatusStrip(t *testing.T) {
 	answer(m, feedSnapshot, nil, down)
 	m.fetch(feedStats)
 	answer(m, feedStats, nil, down)
-	check("refresh failed", live, "can't reach zilkroad ~ prices as of "+m.marketAt.Format("15:04")+" ~ [R] RETRY")
+	check("refresh failed", live, "can't reach Zilkroad ~ prices as of "+m.marketAt.Format("15:04")+" ~ [R] RETRY")
 }
 
 func TestStatusStripOffline(t *testing.T) {
@@ -317,7 +317,7 @@ func TestHintsRowStatus(t *testing.T) {
 	m := onlineModel(t)
 	built := snapshotDate(m.opts.Atlas)
 	long, short := "[ENTER] OPEN  [F] FILTERS  [V] GRID  [?] HELP", "[F] FILTERS  [?] HELP"
-	full := "can't reach zilkroad ~ prices as of " + built + " ~ [R] RETRY"
+	full := "can't reach Zilkroad ~ prices as of " + built + " ~ [R] RETRY"
 	row := func(w int, hint, right string) string {
 		gap := w - 2 - len(hint) - len(right)
 		if right == "" {
@@ -331,9 +331,9 @@ func TestHintsRowStatus(t *testing.T) {
 	}{
 		{140, 24, long, full},
 		{80, 24, short, full},
-		{70, 24, short, "can't reach zilkroad ~ prices as of " + built},
-		{66, 24, short, "can't reach zilkroad"},
-		{60, 20, short, "can't reach zilkroad"},
+		{70, 24, short, "can't reach Zilkroad ~ prices as of " + built},
+		{66, 24, short, "can't reach Zilkroad"},
+		{60, 20, short, "can't reach Zilkroad"},
 		{80, 30, long, "[T] THEME"},
 	}
 	for _, c := range cases {

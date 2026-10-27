@@ -119,9 +119,9 @@ func (m *Model) helpKey(k string) tea.Cmd {
 		m.helpOpen = false
 		m.card = false
 		m.focusQuery()
-	case "up", "k":
+	case "up":
 		m.helpTop--
-	case "down", "j":
+	case "down":
 		m.helpTop++
 	}
 	return nil

@@ -534,9 +534,9 @@ func (m *Model) shedding() *shedding {
 func (m *Model) luminaryKey(k string) {
 	page := max(1, m.bodyH()-2)
 	switch k {
-	case "up", "k":
+	case "up":
 		m.lumTop--
-	case "down", "j":
+	case "down":
 		m.lumTop++
 	case "pgup", "ctrl+b", "ctrl+u":
 		m.lumTop -= page

@@ -21,7 +21,7 @@ var contactParagraphs = [][]string{
 		"putting them back in the terminal.",
 	},
 	{
-		"This one holds all 10,000 zkSNARKs, the zilkroad",
+		"This one holds all 10,000 zkSNARKs, the Zilkroad",
 		"market as it moves, luminaries and holder spotlights.",
 	},
 	{

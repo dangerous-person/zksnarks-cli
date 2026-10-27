@@ -82,6 +82,9 @@ func TestGlyph(t *testing.T) {
 		{"auto", "TERM_PROGRAM=Apple_Terminal GHOSTTY_RESOURCES_DIR=/x", art.UpperHalf},
 		{"auto", "TERM_PROGRAM=Apple_Terminal WT_SESSION=1", art.LowerFiveEighths},
 		{"auto", "TERM_PROGRAM=ghostty", art.UpperHalf},
+		{"auto", "TERM_PROGRAM=tmux __CFBundleIdentifier=com.apple.Terminal", art.LowerFiveEighths},
+		{"auto", "TERM_PROGRAM=tmux __CFBundleIdentifier=com.mitchellh.ghostty", art.UpperHalf},
+		{"auto", "TERM_PROGRAM=tmux", art.UpperHalf},
 		{"half", "TERM_PROGRAM=Apple_Terminal", art.UpperHalf},
 		{"five-eighths", "TERM_PROGRAM=ghostty", art.LowerFiveEighths},
 	} {

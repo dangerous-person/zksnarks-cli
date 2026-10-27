@@ -29,7 +29,7 @@ func (m *Model) PrintBids(cols int, data ...any) []string {
 	value, dim := fg(m.theme.Text), fg(m.theme.Dim)
 	head := m.printHead("BIDS_", "zkSNARKs with active bids.", "https://zilkroad.com/bids")
 	if len(bids) == 0 {
-		head = append(head, text(dim, "No open bids."))
+		head = append(head, text(dim, "No active bids."))
 	} else {
 		var total float64
 		for _, b := range bids {
@@ -39,7 +39,7 @@ func (m *Model) PrintBids(cols int, data ...any) []string {
 		head = append(head, m.statLines([][3]string{
 			{"ITEMS WITH BIDS:", comma(len(bids)), ""},
 			{"HIGHEST BID:", zec(m.tokens[bids[0].i].Bid) + " ZEC", m.usdOf(bids[0].p)},
-			{"AVERAGE BID:", roundZec(avg) + " ZEC", m.usdOf(avg)},
+			{"AVERAGE OPEN BID:", roundZec(avg) + " ZEC", m.usdOf(avg)},
 			{"TOTAL OPEN VALUE:", roundZec(total) + " ZEC", m.usdOf(total)},
 		})...)
 	}
@@ -53,7 +53,7 @@ func (m *Model) PrintBids(cols int, data ...any) []string {
 		case t.Listed && priced(t.Ask):
 			status = m.tileField("ASKING:", value, zec(t.Ask)+" ZEC", m.usdText(t.Ask))
 		}
-		tiles = append(tiles, m.tile(b.i, m.tileField("BID:", value, zec(t.Bid)+" ZEC", ""), status))
+		tiles = append(tiles, m.tile(b.i, m.tileField("BID:", value, zec(t.Bid)+" ZEC", m.usdText(t.Bid)), status))
 	}
 	return m.printPage(cols, head, tiles, live)
 }
