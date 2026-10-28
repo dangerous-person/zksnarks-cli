@@ -122,11 +122,12 @@ func TestSuggestionStarters(t *testing.T) {
 	m := colourModel(t, Options{})
 	openZilkroad(m, false)
 	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
-	if len(m.sugg) == 0 || m.sugg[0].Term != "lineage:" || !strings.Contains(plainView(m)[m.headRows()+1], "› lineage:     22 values") {
+	lineages := len(m.ix.Cat.Counts[0])
+	if len(m.sugg) == 0 || m.sugg[0].Term != "lineage:" || !strings.Contains(plainView(m)[m.headRows()+1], "› lineage:     "+itoa(lineages)+" values") {
 		t.Fatalf("starters: %+v", m.sugg)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.input.text != "lineage:" || len(m.sugg) != 22 || m.sugg[0].Key != 0 || len(m.q.Errs) != 0 {
+	if m.input.text != "lineage:" || len(m.sugg) != lineages || m.sugg[0].Key != 0 || len(m.q.Errs) != 0 {
 		t.Fatalf("after tab: %q, %d suggestions, %v", m.input.text, len(m.sugg), m.q.Errs)
 	}
 	m.input.set("")
@@ -478,6 +479,13 @@ func TestPrintCard(t *testing.T) {
 	}
 }
 
+func unbid(m *Model) *Model {
+	for i := range m.tokens {
+		m.tokens[i].Bid = ""
+	}
+	return m
+}
+
 func TestPrintBids(t *testing.T) {
 	snap := &market.Snapshot{Tokens: []market.Token{
 		{ID: 6991, Listed: true, Ask: "0.479", Bid: "0.38"},
@@ -487,7 +495,7 @@ func TestPrintBids(t *testing.T) {
 	}}
 	rate := &market.Rate{ZecUsd: 1000}
 	for _, c := range []struct{ cols, per int }{{120, 4}, {90, 2}, {60, 2}, {0, 2}} {
-		lines := colourModel(t, Options{}).PrintBids(c.cols, snap, rate)
+		lines := unbid(colourModel(t, Options{})).PrintBids(c.cols, snap, rate)
 		rows := strings.Split(sgr.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n")
 		plain := strings.Join(rows, "\n")
 		for _, want := range []string{"BIDS_", "https://zilkroad.com/bids", "ITEMS WITH BIDS:    4", "HIGHEST BID:        0.80 ZEC   ≈ $800", "AVERAGE OPEN BID:   0.481 ZEC  ≈ $481", "TOTAL OPEN VALUE:   1.922 ZEC  ≈ $1,922", "ASKING:  1.00 ZEC ≈ $1,000", "STATUS:  NOT FOR SALE", "RANK:"} {
@@ -519,7 +527,7 @@ func TestPrintBids(t *testing.T) {
 	for id := 1; id <= 10; id++ {
 		many.Tokens = append(many.Tokens, market.Token{ID: id, Bid: market.Decimal(strconv.Itoa(id))})
 	}
-	plain := sgr.ReplaceAllString(strings.Join(colourModel(t, Options{}).PrintBids(120, many), "\n"), "")
+	plain := sgr.ReplaceAllString(strings.Join(unbid(colourModel(t, Options{})).PrintBids(120, many), "\n"), "")
 	if !strings.Contains(plain, "ITEMS WITH BIDS:    10") || !strings.Contains(plain, "TOTAL OPEN VALUE:   55.00 ZEC") {
 		t.Errorf("the stats do not count all ten bids:\n%s", plain)
 	}
@@ -528,7 +536,7 @@ func TestPrintBids(t *testing.T) {
 			t.Errorf("#%d shown %v, want the nine highest bids", id, shown)
 		}
 	}
-	plain = sgr.ReplaceAllString(strings.Join(colourModel(t, Options{}).PrintBids(100), "\n"), "")
+	plain = sgr.ReplaceAllString(strings.Join(unbid(colourModel(t, Options{})).PrintBids(100), "\n"), "")
 	if !strings.Contains(plain, "No active bids.") || !strings.Contains(plain, "prices as of") {
 		t.Errorf("without bids:\n%s", plain)
 	}
