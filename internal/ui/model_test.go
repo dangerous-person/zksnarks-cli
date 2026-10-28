@@ -623,3 +623,14 @@ func TestTraitArrowFilters(t *testing.T) {
 		t.Fatalf("esc left %q", m.input.text)
 	}
 }
+
+func TestRootDripsFromTheFirstLetter(t *testing.T) {
+	d := newDripping(rootFont, 13)
+	var xs []int
+	for _, f := range d.from {
+		xs = append(xs, f[0])
+	}
+	if len(xs) == 0 || xs[0] != 4 {
+		t.Errorf("drops leave from columns %v, want the first letter's drop at column 4 among them", xs)
+	}
+}

@@ -5,7 +5,7 @@
 //	zksnarks                  launch explorer
 //	zksnarks 7724             print the card of zkSNARK #7724
 //	zksnarks random           print the card of a random zkSNARK
-//	zksnarks bids             print the zkSNARKs with open bids
+//	zksnarks bids             print the zkSNARKs with active bids
 //	zksnarks sales            print the latest sales
 //	zksnarks version          print the version
 //	zksnarks help             show the help
@@ -154,9 +154,13 @@ func main() {
 		os.Exit(1)
 	}
 	m := ui.New(ui.Options{Atlas: a, Site: content, Glyph: glyph, Color: profile, NoColor: os.Getenv("NO_COLOR") != "", Client: market.New(*offline), State: loadState(), Query: *query, Media: files})
-	fmt.Print("\x1b[22;0t")
+	if runtime.GOOS != "windows" {
+		fmt.Print("\x1b[22;0t")
+	}
 	final, err := tea.NewProgram(m, opts...).Run()
-	fmt.Print("\x1b[23;0t")
+	if runtime.GOOS != "windows" {
+		fmt.Print("\x1b[23;0t")
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "zksnarks:", err)
 		os.Exit(1)
@@ -176,7 +180,7 @@ func printHelp(f *os.File, color, glyph string) {
 		}
 		cols, _, _ = xterm.GetSize(f.Fd())
 	}
-	about := "Unofficial terminal explorer for the zkSNARKs collection."
+	about := "Unofficial collection explorer."
 	body := []string{"\x1b[1mZKSNARKS_" + reset, grey + about + reset, ""}
 	w := len(about)
 	for _, c := range [][2]string{
@@ -217,6 +221,7 @@ func printHelp(f *os.File, color, glyph string) {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n" + rule + "\n\n")
+	b.WriteString(grey + "Built by @noisebody0x for ZECATHON 2026." + reset + "\n\n")
 	fmt.Fprint(&colorprofile.Writer{Forward: f, Profile: profile}, b.String())
 }
 

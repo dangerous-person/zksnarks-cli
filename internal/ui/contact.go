@@ -17,8 +17,11 @@ const contactByline = "noisebody · ZECATHON 2026"
 
 var contactParagraphs = [][]string{
 	{
-		"I love moving blocks and building things, so I keep",
-		"putting them back in the terminal.",
+		"I love moving blocks and building things. In the 90s",
+		"I set up my first BBS and joined the community of",
+		"people using those systems to create and distribute",
+		"digital art. Moving zkSNARKs into the terminal feels",
+		"like bringing them home.",
 	},
 	{
 		"This one holds all 10,000 zkSNARKs, the Zilkroad",
@@ -69,7 +72,7 @@ const (
 	contactStack = 2
 )
 
-var contactKeeps = [][]int{{0, 1, 2, 3}, {0, 3}, {3}}
+var contactKeeps = [][]int{{0, 1, 2, 3}, {0, 2, 3}, {0, 3}, {3}}
 
 func (m *Model) contactLines(w, h int) []line {
 	m.contactShow, m.contactPic = rect{}, rect{}

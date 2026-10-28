@@ -243,7 +243,7 @@ func newDripping(f blockFont, seed uint64) *dripping {
 	for x := range rows[0] {
 		for y := len(rows) - 1; y >= 0; y-- {
 			if c := rows[y][x]; c != ' ' {
-				if c == ':' {
+				if c == ':' || c == '∙' {
 					d.from = append(d.from, [3]int{x, y, int(f.tones[y][x])})
 				}
 				break

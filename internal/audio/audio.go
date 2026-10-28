@@ -48,6 +48,8 @@ var device struct {
 	err  error
 }
 
+var hush = func() {}
+
 type idler struct {
 	mu  sync.Mutex
 	dev interface {
@@ -126,6 +128,7 @@ func start() (*oto.Context, error) {
 				done <- result{nil, fmt.Errorf("audio: %v", r)}
 			}
 		}()
+		hush()
 		ctx, ready, err := oto.NewContext(&oto.NewContextOptions{SampleRate: rate, ChannelCount: 2, Format: oto.FormatSignedInt16LE})
 		if err != nil {
 			done <- result{nil, err}
