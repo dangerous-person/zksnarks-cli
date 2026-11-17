@@ -106,7 +106,14 @@ func TestStatusStrip(t *testing.T) {
 	if m.retryMarket() != nil || m.feeds != seqs {
 		t.Fatal("a second r while the first is in flight made requests")
 	}
-	answer(m, feedSnapshot, &market.Snapshot{At: "2026-10-24T21:21:06Z", Tokens: []market.Token{{ID: 907, Listed: true, Ask: "0.25"}}}, nil)
+	// Like the API's, the snapshot covers every token, so the floor is its only listing
+	// whatever prices the build carries.
+	all := make([]market.Token, len(m.tokens))
+	for i, tk := range m.tokens {
+		all[i] = market.Token{ID: tk.ID, Purged: tk.Purged}
+	}
+	all[m.byID[907]] = market.Token{ID: 907, Listed: true, Ask: "0.25"}
+	answer(m, feedSnapshot, &market.Snapshot{At: "2026-10-24T21:21:06Z", Tokens: all}, nil)
 	check("snapshot back, stats pending", "", "refreshing...")
 	answer(m, feedStats, &market.Stats{Sales24h: 17, Volume24h: "10.88", VolumeTotal: "6627.73", Supply: 9324}, nil)
 	answer(m, feedRate, &market.Rate{ZecUsd: 1190.85}, nil)
