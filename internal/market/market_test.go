@@ -6,6 +6,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -212,6 +214,98 @@ func TestNotModifiedWithoutETag(t *testing.T) {
 	})
 	if _, _, err := cl.Stats(context.Background(), ""); err == nil || errors.Is(err, ErrNotModified) {
 		t.Fatalf("got %v, want an HTTP error", err)
+	}
+}
+
+// flaky fails the first requests the way a broken connection does, then lets them through.
+type flaky struct {
+	fails int32
+	err   error
+	calls atomic.Int32
+	hook  func()
+	rt    http.RoundTripper
+}
+
+func (f *flaky) RoundTrip(r *http.Request) (*http.Response, error) {
+	if f.calls.Add(1) <= f.fails {
+		if f.hook != nil {
+			f.hook()
+		}
+		return nil, f.err
+	}
+	return f.rt.RoundTrip(r)
+}
+
+func TestRetriesADeadConnection(t *testing.T) {
+	dead := &net.OpError{Op: "write", Net: "tcp", Err: errors.New("socket is not connected")}
+	cases := []struct {
+		name   string
+		err    error
+		fails  int32
+		cancel bool
+		calls  int32
+		ok     bool
+	}{
+		{"one dead connection", dead, 1, false, 2, true},
+		{"all but the last one dead", dead, attempts - 1, false, attempts, true},
+		{"every connection dead", dead, attempts, false, attempts, false},
+		{"closed before the answer", io.ErrUnexpectedEOF, 1, false, 2, true},
+		{"timed out", &net.OpError{Op: "read", Net: "tcp", Err: context.DeadlineExceeded}, 1, false, 1, false},
+		{"could not connect", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, 1, false, 1, false},
+		{"no such host", &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "zilkroad.com", IsNotFound: true}}, 1, false, 1, false},
+		{"not the connection", errors.New("tls: bad certificate"), 1, false, 1, false},
+		{"cancelled meanwhile", dead, 1, true, 1, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var served atomic.Int32
+			cl := serve(t, func(w http.ResponseWriter, r *http.Request) {
+				served.Add(1)
+				w.Write([]byte(`{"zecUsd":1190.85}`))
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			f := &flaky{fails: c.fails, err: c.err, rt: cl.HTTP.Transport}
+			if c.cancel {
+				f.hook = cancel
+			}
+			cl.HTTP.Transport = f
+			r, _, err := cl.Rate(ctx, "")
+			if got := f.calls.Load(); got != c.calls {
+				t.Errorf("sent %d times, want %d", got, c.calls)
+			}
+			if c.ok {
+				if err != nil || r.ZecUsd != 1190.85 || served.Load() != 1 {
+					t.Fatalf("got %+v, %v, served %d times; want the rate, served once", r, err, served.Load())
+				}
+				return
+			}
+			if err == nil || served.Load() != 0 {
+				t.Fatalf("got %+v, %v, served %d times; want an error", r, err, served.Load())
+			}
+		})
+	}
+}
+
+func TestRetriesAnAnswerCutShort(t *testing.T) {
+	var served atomic.Int32
+	cl := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if served.Add(1) > 1 {
+			w.Write([]byte(`{"zecUsd":1190.85}`))
+			return
+		}
+		w.Header().Set("Content-Length", "18")
+		w.Write([]byte(`{"zecUsd":`))
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close()
+	})
+	r, _, err := cl.Rate(context.Background(), "")
+	if err != nil || r.ZecUsd != 1190.85 || served.Load() != 2 {
+		t.Fatalf("got %+v, %v after %d requests; want the rate from the second one", r, err, served.Load())
 	}
 }
 

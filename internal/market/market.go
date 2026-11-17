@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -186,6 +187,8 @@ const (
 	snapshotCap  = 16 << 20
 	bodyCap      = 1 << 20
 	maxRedirects = 3
+	// attempts is how many times a request is sent when its connection keeps dying.
+	attempts = 3
 )
 
 // New returns a client with sensible timeouts.
@@ -216,10 +219,38 @@ var ErrOffline = fmt.Errorf("offline")
 
 var ErrNotModified = errors.New("not modified")
 
+// transient reports whether a request failed because its connection died after it was made,
+// so sending it again may work. A VPN that offers an IPv6 route it cannot carry does this:
+// now and then the dialer picks that route and the first write fails, while the next
+// connection takes IPv4. A connection that could not be made at all (no network, no such
+// host, refused) is not retried, and neither is a timeout: the wait was long enough.
+func transient(err error) bool {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Timeout() {
+		return false
+	}
+	var op *net.OpError
+	if errors.As(err, &op) {
+		return (op.Op == "read" || op.Op == "write") && !op.Timeout()
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// get sends the request again when its connection dies, whether before the answer or in the
+// middle of it.
 func (c *Client) get(ctx context.Context, path, etag string, limit int64, v any) (string, error) {
 	if c == nil || c.Offline {
 		return "", ErrOffline
 	}
+	for try := 1; ; try++ {
+		tag, err := c.getOnce(ctx, path, etag, limit, v)
+		if err == nil || try == attempts || ctx.Err() != nil || !transient(err) {
+			return tag, err
+		}
+	}
+}
+
+func (c *Client) getOnce(ctx context.Context, path, etag string, limit int64, v any) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", Origin+path, nil)
 	if err != nil {
 		return "", err
