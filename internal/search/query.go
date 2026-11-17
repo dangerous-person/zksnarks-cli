@@ -120,6 +120,38 @@ func splitValues(s string) []string {
 	return append(out, b.String())
 }
 
+// FromArgs joins command-line arguments into a query. A shell takes the quotes off
+// eyes:"rim cobalt", so a trait argument whose values are all in the catalogue gets them
+// back around the ones with a space. Every other argument is left as typed and splits at
+// its spaces, so a whole query in one argument works too.
+func FromArgs(args []string, cat *Catalogue) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = a
+		key, val, ok := strings.Cut(a, ":")
+		k, known := traitKeys[strings.ToLower(key)]
+		if !ok || !known || !strings.Contains(val, " ") || strings.Contains(val, `"`) {
+			continue
+		}
+		vals := strings.Split(val, ",")
+		for j, v := range vals {
+			v = strings.TrimSpace(v)
+			if _, ok := cat.Canonical(k, v); !ok {
+				vals = nil
+				break
+			}
+			if strings.Contains(v, " ") {
+				v = `"` + v + `"`
+			}
+			vals[j] = v
+		}
+		if vals != nil {
+			parts[i] = key + ":" + strings.Join(vals, ",")
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 // Parse parses a query. The catalogue validates trait values and maps them to their
 // canonical spelling.
 func Parse(s string, cat *Catalogue) Query {

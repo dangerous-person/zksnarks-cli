@@ -380,6 +380,13 @@ func TestQueryFlagIsCleaned(t *testing.T) {
 func TestEnterSearchesBareWords(t *testing.T) {
 	m := colourModel(t, Options{})
 	openZilkroad(m, false)
+	// The first skin offered is the commonest one, and which one that is changes with the
+	// snapshot.
+	skins := m.ix.Suggest("skin:", m.results, m.tokens)
+	if len(skins) == 0 {
+		t.Fatal("no skins to offer")
+	}
+	skin := search.Complete("skin:", skins[0])
 	enter := func(typed string, down int) {
 		m.focus, m.card = focusMain, false
 		m.input.set("")
@@ -404,7 +411,7 @@ func TestEnterSearchesBareWords(t *testing.T) {
 	}{
 		{"rim", 0, "rim", focusMain},
 		{"ski", 0, "skin:", focusQuery},
-		{"skin:", 0, `skin:Earthtone `, focusQuery},
+		{"skin:", 0, skin, focusQuery},
 		{"", 0, "lineage:", focusQuery},
 	}
 	for _, c := range cases {
@@ -539,6 +546,310 @@ func TestPrintBids(t *testing.T) {
 	plain = sgr.ReplaceAllString(strings.Join(unbid(colourModel(t, Options{})).PrintBids(100), "\n"), "")
 	if !strings.Contains(plain, "No active bids.") || !strings.Contains(plain, "prices as of") {
 		t.Errorf("without bids:\n%s", plain)
+	}
+}
+
+// forSale is a live snapshot of every token, as the API sends it, with only the given ones
+// for sale, listed two hours ago.
+func forSale(m *Model, asks map[int]string) *market.Snapshot {
+	at := time.Now().Add(-2 * time.Hour).Format(time.RFC3339)
+	s := &market.Snapshot{}
+	for _, tk := range m.tokens {
+		lt := market.Token{ID: tk.ID, Purged: tk.Purged}
+		if ask, ok := asks[tk.ID]; ok {
+			lt.Listed, lt.Ask, lt.ListedAt = true, market.Decimal(ask), &at
+		}
+		s.Tokens = append(s.Tokens, lt)
+	}
+	return s
+}
+
+func TestPrintFloor(t *testing.T) {
+	m := colourModel(t, Options{})
+	var ids []int // twelve ranked tokens that are not purged
+	supply := 0
+	for _, tk := range m.tokens {
+		if tk.Purged {
+			continue
+		}
+		supply++
+		if tk.Rank != 0 && len(ids) < 12 {
+			ids = append(ids, tk.ID)
+		}
+	}
+	rarerFirst := func(ids []int) []int {
+		out := slices.Clone(ids)
+		slices.SortFunc(out, func(a, b int) int { return m.tokens[m.byID[a]].Rank - m.tokens[m.byID[b]].Rank })
+		return out
+	}
+	asks := map[int]string{ids[0]: "0.2", ids[1]: "0.21", ids[2]: "0.21", ids[3]: "0.22"}
+	for _, id := range ids[4:] {
+		asks[id] = "0.3"
+	}
+	want := append([]int{ids[0]}, rarerFirst(ids[1:3])...)
+	want = append(append(want, ids[3]), rarerFirst(ids[4:])[:5]...)
+	rate := &market.Rate{ZecUsd: 1000}
+	for _, c := range []struct{ cols, per int }{{120, 3}, {90, 3}, {60, 2}, {0, 3}} {
+		m := colourModel(t, Options{})
+		lines, err := m.PrintFloor(c.cols, nil, forSale(m, asks), rate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows := strings.Split(sgr.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n")
+		panelW := width(rows[0])
+		for i, r := range rows {
+			if width(r) != panelW || c.cols > 0 && width(r) > c.cols {
+				t.Fatalf("%d columns: row %d is %d wide, the first %d", c.cols, i, width(r), panelW)
+			}
+			rows[i] = strings.TrimRight(r, " ")
+		}
+		head := []string{"", "  FLOOR_", "  The cheapest zkSNARKs for sale.", "  https://zilkroad.com/market", "",
+			"  FLOOR PRICE:   0.20 ZEC  ≈ $200", "  LISTED:        12 of " + comma(supply), "  WITHIN 10%:    4", ""}
+		if !slices.Equal(rows[:len(head)], head) {
+			t.Errorf("%d columns: head\n%s\nwant\n%s", c.cols, strings.Join(rows[:len(head)], "\n"), strings.Join(head, "\n"))
+		}
+		plain := strings.Join(rows, "\n")
+		for _, s := range []string{"ASKING:  0.20 ZEC ≈ $200", "LISTED:  2h ago", "RANK:"} {
+			if !strings.Contains(plain, s) {
+				t.Errorf("%d columns: missing %q", c.cols, s)
+			}
+		}
+		if strings.Contains(plain, "prices as of") {
+			t.Errorf("%d columns: live prices marked as old", c.cols)
+		}
+		var shown []int
+		var on []int
+		for y, r := range rows {
+			for _, f := range strings.Fields(r) {
+				if id, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(f, "#"), "_")); err == nil && strings.HasPrefix(f, "#") {
+					shown, on = append(shown, id), append(on, y)
+				}
+			}
+		}
+		if !slices.Equal(shown, want) {
+			t.Errorf("%d columns: shows %v, want the nine cheapest, rarer first at one price: %v", c.cols, shown, want)
+		}
+		if len(on) == 9 && (on[c.per-1] != on[0] || on[c.per] == on[0]) {
+			t.Errorf("%d columns: titles on rows %v, want %d a row", c.cols, on, c.per)
+		}
+	}
+
+	// the explorer lists the same tokens in the same order
+	ex := colourModel(t, Options{Query: "listed sort:price"})
+	ex.apply(forSale(ex, asks))
+	var listedFirst []int
+	for _, i := range ex.results[:min(len(ex.results), 9)] {
+		listedFirst = append(listedFirst, ex.tokens[i].ID)
+	}
+	if !slices.Equal(listedFirst, want) {
+		t.Errorf("the explorer's listed sort:price starts with %v, the floor with %v", listedFirst, want)
+	}
+
+	lineage := m.tokens[m.byID[ids[0]]].Traits[0]
+	listed := 0
+	for _, id := range ids {
+		if m.tokens[m.byID[id]].Traits[0] == lineage {
+			listed++
+		}
+	}
+	words := `lineage:"` + lineage + `"`
+	lines, err := m.PrintFloor(120, []string{words}, forSale(m, asks), rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := sgr.ReplaceAllString(strings.Join(lines, "\n"), "")
+	for _, s := range []string{"The cheapest zkSNARKs for sale matching " + words + ".", "FLOOR PRICE:   0.20 ZEC", "LISTED:        " + comma(listed) + " of " + comma(m.ix.Cat.Counts[0][lineage])} {
+		if !strings.Contains(plain, s) {
+			t.Errorf("%s: missing %q in\n%s", words, s, plain)
+		}
+	}
+
+	// words about the market narrow the listings, not the supply they are counted against,
+	// and matching no listing is not a mistake in the words
+	lines, err = m.PrintFloor(120, []string{"price<0.215"}, forSale(m, asks), rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain = sgr.ReplaceAllString(strings.Join(lines, "\n"), "")
+	if !strings.Contains(plain, "LISTED:        3 of "+comma(supply)) || !strings.Contains(plain, "WITHIN 10%:    3") || strings.Count(plain, "zkSNARK #") != 3 {
+		t.Errorf("price<0.215: want the three listings under it, counted against the whole supply:\n%s", plain)
+	}
+	for _, w := range []string{"price<0.01", "last>5 listed", "unlisted"} {
+		lines, err = m.PrintFloor(120, []string{w}, forSale(m, asks), rate)
+		if plain := sgr.ReplaceAllString(strings.Join(lines, "\n"), ""); err != nil || !strings.Contains(plain, "None for sale.") {
+			t.Errorf("%s: %v, want a panel with nothing for sale:\n%s", w, err, plain)
+		}
+		if err := colourModel(t, Options{}).CheckFloor([]string{w}); err != nil {
+			t.Errorf("%s is refused before the prices are known: %v", w, err)
+		}
+	}
+
+	long := words + " rank>=1 rank<=10000 price>=0.1 price<=100 listed rank>=2"
+	lines, err = m.PrintFloor(80, []string{long}, forSale(m, asks), rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range strings.Split(sgr.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n") {
+		if width(r) > 80 {
+			t.Fatalf("many words: row %d is %d wide in 80 columns: %q", i, width(r), r)
+		}
+	}
+	if plain := sgr.ReplaceAllString(strings.Join(lines, "\n"), ""); !strings.Contains(plain, "The cheapest zkSNARKs for sale matching "+words) || !strings.Contains(plain, "…") {
+		t.Errorf("many words: the cut line should still start with them:\n%s", plain)
+	}
+
+	lines, err = m.PrintFloor(120, nil, forSale(m, nil), rate)
+	plain = sgr.ReplaceAllString(strings.Join(lines, "\n"), "")
+	if err != nil || !strings.Contains(plain, "None for sale.") || strings.Contains(plain, "FLOOR PRICE") || strings.Contains(plain, "zkSNARK #") {
+		t.Errorf("nothing listed: %v\n%s", err, plain)
+	}
+
+	// a value with a space arrives from the shell without its quotes, and a whole query can
+	// arrive as one argument
+	spaced := slices.IndexFunc(m.ix.Cat.Values[2], func(v string) bool { return strings.Contains(v, " ") })
+	if spaced < 0 {
+		t.Fatal("no eyes with a space in their name")
+	}
+	eyes := strings.ToLower(m.ix.Cat.Values[2][spaced])
+	for _, args := range [][]string{{"eyes:" + eyes}, {"rank>=1 eyes:\"" + eyes + "\""}, {"rank>=1", "eyes:" + eyes}} {
+		lines, err := m.PrintFloor(120, args, forSale(m, asks), rate)
+		if plain := sgr.ReplaceAllString(strings.Join(lines, "\n"), ""); err != nil || !strings.Contains(plain, `eyes:"`+eyes+`".`) {
+			t.Errorf("%q: %v, want the eyes read as one value:\n%s", args, err, plain)
+		}
+	}
+
+	for words, want := range map[string]string{
+		"zzzz":                     "no zkSNARK matches zzzz",
+		"eyes:zzzz":                `eyes has no value "zzzz"`,
+		"zz\x1b[31mzz":             "no zkSNARK matches zz[31mzz",
+		`eyes:"` + eyes + `" zzzz`: `no zkSNARK matches eyes:"` + eyes + `" zzzz`,
+		"eyes:":                    "nothing after eyes:",
+		"eyes: rank>=1":            "nothing after eyes:",
+		"rank>=1 price<":           "nothing after price<",
+		"#":                        "nothing after #",
+		"rank>=1 sort:rank":        "the floor is sorted by price, leave sort:rank out",
+	} {
+		if _, err := m.PrintFloor(120, []string{words}); err == nil || err.Error() != want {
+			t.Errorf("%q: %v, want %s", words, err, want)
+		}
+		if err := m.CheckFloor([]string{words}); err == nil || err.Error() != want {
+			t.Errorf("checking %q: %v, want %s", words, err, want)
+		}
+	}
+	if err := m.CheckFloor(nil); err != nil {
+		t.Errorf("no words: %v", err)
+	}
+}
+
+func TestPrintLineages(t *testing.T) {
+	m := colourModel(t, Options{})
+	var names []string // the lineages with live tokens, the largest first
+	for _, v := range m.ix.Cat.Values[0] {
+		if m.ix.Cat.Counts[0][v] > 0 {
+			names = append(names, v)
+		}
+	}
+	token := func(lineage string, skip int) int {
+		for _, tk := range m.tokens {
+			if !tk.Purged && tk.Traits[0] == lineage {
+				if skip == 0 {
+					return tk.ID
+				}
+				skip--
+			}
+		}
+		t.Fatalf("no token %d of %s", skip, lineage)
+		return 0
+	}
+	big, small := names[0], names[1]
+	// two of the big lineage share its floor, so the rarer of them is its cheapest
+	tied := []int{token(big, 1), token(big, 2)}
+	slices.SortFunc(tied, func(a, b int) int {
+		ra, rb := m.tokens[m.byID[a]].Rank, m.tokens[m.byID[b]].Rank
+		if ra == 0 || rb == 0 || ra == rb {
+			t.Fatalf("#%d and #%d need different ranks, got %d and %d", a, b, ra, rb)
+		}
+		return ra - rb
+	})
+	asks := map[int]string{token(big, 0): "0.5", tied[0]: "0.4", tied[1]: "0.4", token(small, 0): "0.3"}
+	lines := m.PrintLineages(120, forSale(m, asks), &market.Rate{ZecUsd: 1000})
+	rows := strings.Split(sgr.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n")
+	for i, r := range rows {
+		if width(r) != width(rows[0]) {
+			t.Fatalf("row %d is %d wide, the first %d", i, width(r), width(rows[0]))
+		}
+	}
+	for i, want := range []string{"", "  LINEAGES_", "  The floor of every lineage.", "  https://zilkroad.com/market", ""} {
+		if got := strings.TrimRight(rows[i], " "); got != want {
+			t.Errorf("row %d: %q, want %q", i, got, want)
+		}
+	}
+	head, table := rows[5], rows[6:len(rows)-1]
+	if got := strings.Fields(head); !slices.Equal(got, []string{"LINEAGE", "LIVE", "LISTED", "FLOOR", "CHEAPEST"}) {
+		t.Fatalf("column names %q", got)
+	}
+	if len(table) != len(names) {
+		t.Fatalf("%d rows, want one for each of the %d lineages:\n%s", len(table), len(names), strings.Join(rows, "\n"))
+	}
+	liveEnd, listedEnd, floorAt := strings.Index(head, "LIVE")+4, strings.Index(head, "LISTED")+6, strings.Index(head, "FLOOR")
+	// "≈" takes three bytes, so a byte index past it is two more than the column
+	tokenAt := strings.Index(head, "CHEAPEST") + len("≈") - 1
+	var order []string
+	lastLive := 0
+	for i, r := range table {
+		name := strings.TrimSpace(r[:liveEnd])
+		name = strings.TrimSpace(name[:strings.LastIndexByte(name, ' ')+1])
+		f := strings.Fields(r[len("  "+name):])
+		live, listed := comma(m.ix.Cat.Counts[0][name]), "0"
+		floor := []string{"-"}
+		switch name {
+		case small:
+			listed, floor = "1", []string{"0.30", "ZEC", "≈", "$300", "#" + itoa(token(small, 0))}
+		case big:
+			listed, floor = "3", []string{"0.40", "ZEC", "≈", "$400", "#" + itoa(tied[0])}
+		}
+		if want := append([]string{live, listed}, floor...); !slices.Equal(f, want) {
+			t.Errorf("%s: %q, want %q", name, f, want)
+		}
+		if r[liveEnd-1] == ' ' || r[liveEnd] != ' ' || r[listedEnd-1] == ' ' || r[listedEnd] != ' ' || r[floorAt] == ' ' || r[floorAt-1] != ' ' {
+			t.Errorf("%s is not under the column names:\n%s\n%s", name, head, r)
+		}
+		if len(f) > 3 && (r[tokenAt] != '#' || r[tokenAt-1] != ' ') {
+			t.Errorf("%s: its cheapest token is not under CHEAPEST:\n%s\n%s", name, head, r)
+		}
+		order = append(order, name)
+		if i >= 2 {
+			if n := m.ix.Cat.Counts[0][name]; n < lastLive {
+				t.Errorf("%s (%d live) comes after a lineage of %d, want the unlisted ones smallest first", name, n, lastLive)
+			} else {
+				lastLive = n
+			}
+		}
+	}
+	if order[0] != small || order[1] != big {
+		t.Errorf("starts with %q, want the cheapest lineage first: %s, %s", order[:2], small, big)
+	}
+	if plain := strings.Join(rows, "\n"); strings.Contains(plain, "prices as of") {
+		t.Error("live prices marked as old")
+	}
+	floor, err := m.PrintFloor(120, []string{`lineage:"` + big + `"`}, forSale(m, asks))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, after, _ := strings.Cut(sgr.ReplaceAllString(strings.Join(floor, "\n"), ""), "zkSNARK #"); !strings.HasPrefix(after, itoa(tied[0])+"_") {
+		t.Errorf("the floor of %s does not start with #%d, the token the table names", big, tied[0])
+	}
+	narrow := strings.Split(sgr.ReplaceAllString(strings.Join(m.PrintLineages(60, forSale(m, asks), &market.Rate{ZecUsd: 123456789}), "\n"), ""), "\n")
+	for i, r := range narrow {
+		if width(r) > 60 || strings.Contains(r, "≈") {
+			t.Fatalf("60 columns: row %d is %d wide: %q, want the table without dollars to fit", i, width(r), r)
+		}
+	}
+	if plain := strings.Join(narrow, "\n"); !strings.Contains(plain, "0.40 ZEC") || !strings.Contains(plain, "#"+itoa(tied[0])) {
+		t.Errorf("60 columns: the floor or its token is gone:\n%s", plain)
+	}
+	if plain := strings.Join(colourModel(t, Options{}).PrintLineages(120), "\n"); !strings.Contains(plain, "prices as of") {
+		t.Error("the build's prices are not marked as old")
 	}
 }
 

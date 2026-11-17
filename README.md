@@ -105,13 +105,17 @@ Run `zksnarks` on its own to open the explorer, or with a command to print right
 
 ```sh
 zksnarks            # launch explorer
+zksnarks floor      # print the floor listings
+zksnarks lineages   # print the floor of every lineage
 zksnarks 7724       # print the card of zkSNARK #7724
 zksnarks random     # print the card of a random zkSNARK
 zksnarks bids       # print the zkSNARKs with active bids
 zksnarks sales      # print the latest sales
-zksnarks version    # print the version
-zksnarks help       # show this help
 ```
+
+`zksnarks floor` takes search words too: `zksnarks floor skele` prints the cheapest Skele for sale, and `zksnarks floor skele "rank<=100"` only the rare ones.
+Keep a comparison in quotes, or the shell takes `<` for itself.
+`zksnarks help` shows this list, and `zksnarks version` the version.
 
 ## Keys
 

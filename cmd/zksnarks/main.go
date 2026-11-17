@@ -3,6 +3,9 @@
 // you look at.
 //
 //	zksnarks                  launch explorer
+//	zksnarks floor            print the floor listings
+//	zksnarks floor skele      print the floor listings matching search words
+//	zksnarks lineages         print the floor of every lineage
 //	zksnarks 7724             print the card of zkSNARK #7724
 //	zksnarks random           print the card of a random zkSNARK
 //	zksnarks bids             print the zkSNARKs with active bids
@@ -92,7 +95,25 @@ func main() {
 		}
 		return
 	}
-	commands := map[string]func(colorprofile.Profile, art.Glyph, bool) error{"random": printRandom, "bids": printBids, "sales": printSales}
+	if fs.Arg(0) == "floor" {
+		words := fs.Args()[1:]
+		for _, w := range words {
+			switch {
+			case w == "-h" || w == "-help" || w == "--help":
+				printHelp(os.Stdout, *colorFlag, *glyphFlag)
+				return
+			case strings.HasPrefix(w, "-"):
+				fmt.Fprintf(os.Stderr, "zksnarks: %s goes before the command, like zksnarks %s floor\n", w, w)
+				os.Exit(2)
+			}
+		}
+		if err := printFloor(words, profile, glyph, *offline); err != nil {
+			fmt.Fprintln(os.Stderr, "zksnarks:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	commands := map[string]func(colorprofile.Profile, art.Glyph, bool) error{"lineages": printLineages, "random": printRandom, "bids": printBids, "sales": printSales}
 	if cmd := fs.Arg(0); commands[cmd] != nil || cmd == "help" || cmd == "version" {
 		if fs.NArg() > 1 {
 			fmt.Fprintf(os.Stderr, "zksnarks: %s takes no arguments\n", cmd)
@@ -185,12 +206,12 @@ func printHelp(f *os.File, color, glyph string) {
 	w := len(about)
 	for _, c := range [][2]string{
 		{"zksnarks", "launch explorer"},
+		{"zksnarks floor", "print the floor listings"},
+		{"zksnarks lineages", "print the floor of every lineage"},
 		{"zksnarks 7724", "print the card of zkSNARK #7724"},
 		{"zksnarks random", "print the card of a random zkSNARK"},
 		{"zksnarks bids", "print the zkSNARKs with active bids"},
 		{"zksnarks sales", "print the latest sales"},
-		{"zksnarks version", "print the version"},
-		{"zksnarks help", "show this help"},
 	} {
 		body = append(body, fmt.Sprintf("%-22s%s%s%s", c[0], grey, c[1], reset))
 		w = max(w, 22+len(c[1]))
@@ -282,15 +303,54 @@ func printCards(a *atlas.Atlas, ids []int, profile colorprofile.Profile, glyph a
 	return nil
 }
 
-func printBids(profile colorprofile.Profile, glyph art.Glyph, offline bool) error {
+// marketModel builds the model for a command that only makes sense with live prices; what
+// names the thing the command prints.
+func marketModel(what string, profile colorprofile.Profile, glyph art.Glyph, offline bool) (*ui.Model, *market.Client, error) {
 	if offline {
-		return errors.New("bids come from Zilkroad, run it without -offline")
+		return nil, nil, fmt.Errorf("%s come from Zilkroad, run it without -offline", what)
 	}
 	a, err := embedded.Load()
 	if err != nil {
+		return nil, nil, err
+	}
+	return printModel(a, profile, glyph, offline)
+}
+
+func printFloor(words []string, profile colorprofile.Profile, glyph art.Glyph, offline bool) error {
+	m, client, err := marketModel("listings", profile, glyph, offline)
+	if err != nil {
 		return err
 	}
-	m, client, err := printModel(a, profile, glyph, offline)
+	if err := m.CheckFloor(words); err != nil {
+		return err
+	}
+	data, err := liveData(client)
+	if err != nil {
+		return errUnreachable
+	}
+	lines, err := m.PrintFloor(termCols(), words, data...)
+	if err != nil {
+		return err
+	}
+	printPanel(profile, lines)
+	return nil
+}
+
+func printLineages(profile colorprofile.Profile, glyph art.Glyph, offline bool) error {
+	m, client, err := marketModel("listings", profile, glyph, offline)
+	if err != nil {
+		return err
+	}
+	data, err := liveData(client)
+	if err != nil {
+		return errUnreachable
+	}
+	printPanel(profile, m.PrintLineages(termCols(), data...))
+	return nil
+}
+
+func printBids(profile colorprofile.Profile, glyph art.Glyph, offline bool) error {
+	m, client, err := marketModel("bids", profile, glyph, offline)
 	if err != nil {
 		return err
 	}
@@ -303,14 +363,7 @@ func printBids(profile colorprofile.Profile, glyph art.Glyph, offline bool) erro
 }
 
 func printSales(profile colorprofile.Profile, glyph art.Glyph, offline bool) error {
-	if offline {
-		return errors.New("sales come from Zilkroad, run it without -offline")
-	}
-	a, err := embedded.Load()
-	if err != nil {
-		return err
-	}
-	m, client, err := printModel(a, profile, glyph, offline)
+	m, client, err := marketModel("sales", profile, glyph, offline)
 	if err != nil {
 		return err
 	}

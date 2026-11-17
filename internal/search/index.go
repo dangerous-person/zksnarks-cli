@@ -1,6 +1,7 @@
 package search
 
 import (
+	"cmp"
 	"math"
 	"slices"
 	"sort"
@@ -200,8 +201,30 @@ func (ix *Index) matches(i int, t *atlas.Token, terms []Term) bool {
 	return !ids || id
 }
 
+// rarer orders two tokens by rank, unranked ones last.
+func rarer(a, b *atlas.Token) int {
+	ra, rb := a.Rank, b.Rank
+	if ra == 0 {
+		ra = math.MaxInt
+	}
+	if rb == 0 {
+		rb = math.MaxInt
+	}
+	return cmp.Compare(ra, rb)
+}
+
+// Cheaper orders two listed tokens by asking price. At the same price the rarer one comes
+// first, then the lower number. Run sorts by price the same way, so the explorer and the
+// printed commands agree on which token is the cheapest.
+func Cheaper(a, b *atlas.Token) int {
+	pa, _ := Price(a.Ask)
+	pb, _ := Price(b.Ask)
+	return cmp.Or(cmp.Compare(pa, pb), rarer(a, b), cmp.Compare(a.ID, b.ID))
+}
+
 // Run filters and sorts. Tokens without the sort key (unlisted for price and new, unranked
-// for rank) always come last, in number order.
+// for rank) always come last, in number order. At the same price the rarer token comes
+// first.
 func (ix *Index) Run(q Query, tokens []atlas.Token) []int {
 	res := ix.Filter(q, tokens)
 	key := func(i int) (float64, bool) {
@@ -237,6 +260,11 @@ func (ix *Index) Run(q Query, tokens []atlas.Token) []int {
 			return okA
 		}
 		if !okA || ka == kb {
+			if okA && q.Sort.Field == "price" {
+				if c := rarer(&tokens[ia], &tokens[ib]); c != 0 {
+					return c < 0
+				}
+			}
 			return tokens[ia].ID < tokens[ib].ID
 		}
 		if q.Sort.Desc {

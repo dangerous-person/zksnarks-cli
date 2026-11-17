@@ -209,3 +209,55 @@ func TestSuggest(t *testing.T) {
 		t.Fatalf("key suggest: %+v", got)
 	}
 }
+
+func TestPriceTiesGoToTheRarer(t *testing.T) {
+	ts := fixture()
+	for _, i := range []int{1, 2, 3} {
+		ts[i].Ask = "1"
+	}
+	ts[1].Rank, ts[2].Rank, ts[3].Rank = 300, 0, 100 // #2, the unranked #3 and #4
+	ix := NewIndex(ts)
+	want := []int{4, 2, 3}
+	for _, q := range []string{"listed sort:price", "listed sort:-price"} {
+		if got := ids(ts, ix.Run(Parse(q, ix.Cat), ts)); !slices.Equal(got, want) {
+			t.Errorf("%s: %v, want the rarer first at one price, the unranked last: %v", q, got, want)
+		}
+	}
+	listed := []atlas.Token{ts[1], ts[2], ts[3]}
+	slices.SortFunc(listed, func(a, b atlas.Token) int { return Cheaper(&a, &b) })
+	if got := []int{listed[0].ID, listed[1].ID, listed[2].ID}; !slices.Equal(got, want) {
+		t.Errorf("Cheaper orders %v, want %v like the price sort", got, want)
+	}
+	ts[3].Ask = "1.5"
+	if got := ids(ts, ix.Run(Parse("listed sort:price", ix.Cat), ts)); !slices.Equal(got, []int{2, 3, 4}) {
+		t.Errorf("a rarer token went before a cheaper one: %v", got)
+	}
+}
+
+func TestFromArgs(t *testing.T) {
+	ix := NewIndex(fixture())
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"skele", "rim"}, "skele rim"},
+		{[]string{"skele rank<=100"}, "skele rank<=100"}, // a whole query in one argument
+		{[]string{"rim bone"}, "rim bone"},
+		{[]string{"eyes:rim bone"}, `eyes:"rim bone"`}, // what a shell leaves of eyes:"rim bone"
+		{[]string{"Eyes:Rim Bone,volt", "skele"}, `Eyes:"Rim Bone",volt skele`},
+		{[]string{"skin:dusty rose,gold"}, `skin:"dusty rose",gold`},
+		{[]string{`eyes:"rim bone"`}, `eyes:"rim bone"`},
+		{[]string{"eyes:rim bone skele"}, "eyes:rim bone skele"}, // not one value, Parse says so
+		{[]string{"nokey:rim bone"}, "nokey:rim bone"},
+	}
+	for _, c := range cases {
+		got := FromArgs(c.args, ix.Cat)
+		if got != c.want {
+			t.Errorf("%q: %q, want %q", c.args, got, c.want)
+		}
+	}
+	if q := Parse(FromArgs([]string{"eyes:rim bone", "skele"}, ix.Cat), ix.Cat); len(q.Errs) != 0 || len(q.Terms) != 2 {
+		t.Errorf("the joined arguments do not parse: %+v", q)
+	}
+}

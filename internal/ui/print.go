@@ -59,11 +59,17 @@ func (m *Model) printHead(name, about, url string) []line {
 	return []line{text(bold(m.theme.Text), name), text(dim, about), text(dim, url), {}}
 }
 
+// statLines lays out groups of name, value and a note such as the dollar price. The notes
+// line up after the widest value that has one, so a long value without a note, like
+// "1,457 of 9,324", does not push them away.
 func (m *Model) statLines(groups ...[][3]string) []line {
 	keyW, valW := 0, 0
 	for _, g := range groups {
 		for _, s := range g {
-			keyW, valW = max(keyW, width(s[0])), max(valW, width(s[1]))
+			keyW = max(keyW, width(s[0]))
+			if s[2] != "" {
+				valW = max(valW, width(s[1]))
+			}
 		}
 	}
 	var blocks [][]line
@@ -128,8 +134,11 @@ func (m *Model) tile(i int, fields ...line) []line {
 	return append(out, m.tileField("RANK:", fg(m.theme.Text), rank, ""))
 }
 
+// printPad is the margin on each side of a printed panel.
+const printPad = 2
+
 func (m *Model) printPage(cols int, head []line, tiles [][]line, live bool) []string {
-	const pad, gap = 2, 3
+	const pad, gap = printPad, 3
 	textW := art.ThumbW
 	for _, t := range tiles {
 		for _, l := range t {
